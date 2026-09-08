@@ -5,6 +5,14 @@
   "version": "1.0.16",
   "publisher": "local",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mxllAs/antigravity-quota-tokens.git"
+  },
+  "bugs": {
+    "url": "https://github.com/mxllAs/antigravity-quota-tokens/issues"
+  },
+  "homepage": "https://github.com/mxllAs/antigravity-quota-tokens#readme",
   "engines": {
     "vscode": "^1.80.0"
   },
