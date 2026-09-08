@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <!-- Quota Gauge Arc (配额仪表盘环) -->
+  <path d="M4.5 17.5 A 9 9 0 1 1 19.5 17.5" />
+  <!-- High-Energy Token Bolt (算力与Token闪电核心) -->
+  <path d="M12.5 5.5 L7.5 13 H12 L11 19.5 L17 11.5 H12.5 Z" fill="currentColor" stroke="none" />
+</svg>

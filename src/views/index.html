@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+
+  <!-- Top Bar -->
+  <div class="top-bar">
+    <div class="top-title" id="topTitle">⚡ 实时配额与用量</div>
+    <div class="top-actions">
+      <button class="btn-icon" id="btnLang" title="Switch to English / 切换为英文">
+        🌐 <span id="langBtnText">EN</span>
+      </button>
+      <button class="btn-icon" id="btnRefresh" title="重新检测进程与账号配额 (换账号后点此)">
+        <span id="refreshIcon">🔄</span> <span id="lblRefresh">刷新</span>
+      </button>
+      <button class="btn-icon" id="btnCopy" title="复制今日 Markdown 报告">
+        📋 <span id="lblCopy">复制</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Account Card -->
+  <div class="account-card" id="cardAccount" title="当前登录的 Antigravity 账号（更换账号后点击刷新即可热更新）">
+    <div class="account-left">
+      <div class="account-avatar" id="accountAvatar">👤</div>
+      <div class="account-details">
+        <div class="account-name-row">
+          <span class="account-name" id="accountName">检测中...</span>
+        </div>
+        <div class="account-email" id="accountEmail">正在连接语言服务</div>
+      </div>
+    </div>
+    <div class="account-tier" id="accountTier">Google AI</div>
+  </div>
+
+  <!-- Section 1: Quotas -->
+  <div class="section-title" id="secQuotas">官方实时模型配额</div>
+
+  <!-- Gemini Pool Card -->
+  <div class="card" id="cardGemini">
+    <div class="quota-header">
+      <div class="quota-name">
+        <span class="dot dot-green" id="geminiDot"></span>
+        <span id="lblGeminiPool">Gemini 额度池</span>
+      </div>
+      <div class="quota-badge" id="geminiPct">--%</div>
+    </div>
+    <div class="quota-models-hint" id="geminiModelsHint">
+      原生支持 1M 超长上下文 (104.8 万 tokens)
+    </div>
+    <div class="progress-bar-bg">
+      <div class="progress-bar-fill fill-gemini" id="geminiBar" style="width: 0%;"></div>
+    </div>
+    <div class="quota-footer">
+      <span id="geminiUsed">5h消耗: --%</span>
+      <span id="geminiReset">⏱ 重置: --</span>
+    </div>
+    <!-- Weekly Limit Subtle Row -->
+    <div class="quota-weekly-row" id="geminiWeeklyRow" style="display: none;">
+      <span class="weekly-tag" id="lblGeminiWeekly">📅 周额度健康度</span>
+      <div style="display: flex; align-items: center; gap: 6px;">
+        <span class="weekly-val-badge" id="geminiWeeklyVal">剩余 --%</span>
+        <span class="weekly-reset-time" id="geminiWeeklyReset">⏱ --</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Claude & GPT Pool Card -->
+  <div class="card" id="cardClaude">
+    <div class="quota-header">
+      <div class="quota-name">
+        <span class="dot dot-green" id="claudeDot"></span>
+        <span id="lblClaudePool">Claude & GPT 额度池</span>
+      </div>
+      <div class="quota-badge" id="claudePct">--%</div>
+    </div>
+    <div class="quota-models-hint" id="claudeModelsHint">
+      Claude 200k 上下文 · GPT-OSS 128k 上下文
+    </div>
+    <div class="progress-bar-bg">
+      <div class="progress-bar-fill fill-claude" id="claudeBar" style="width: 0%;"></div>
+    </div>
+    <div class="quota-footer">
+      <span id="claudeUsed">5h消耗: --%</span>
+      <span id="claudeReset">⏱ 重置: --</span>
+    </div>
+    <!-- Weekly Limit Subtle Row -->
+    <div class="quota-weekly-row" id="claudeWeeklyRow" style="display: none;">
+      <span class="weekly-tag" id="lblClaudeWeekly">📅 周额度健康度</span>
+      <div style="display: flex; align-items: center; gap: 6px;">
+        <span class="weekly-val-badge" id="claudeWeeklyVal">剩余 --%</span>
+        <span class="weekly-reset-time" id="claudeWeeklyReset">⏱ --</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Active Session Context Card -->
+  <div class="active-session-card" id="cardActiveSession" style="display: none;">
+    <!-- Row 1: Session Title and ID -->
+    <div class="active-session-header">
+      <div class="active-session-title-wrap">
+        <span class="pulse-dot"></span>
+        <span class="active-session-name" id="activeSessionName">当前会话</span>
+        <span class="session-id" id="activeSessionId">--</span>
+      </div>
+    </div>
+
+    <!-- Row 2: Dedicated Context Box & Capacity Visual Bar -->
+    <div class="active-ctx-box" id="activeCtxBox">
+      <div class="active-ctx-header">
+        <div class="active-ctx-label">
+          <span>🧠</span>
+          <span id="lblContextWindow">上下文窗口</span>
+        </div>
+        <div class="active-ctx-numbers">
+          <span class="active-ctx-used" id="activeContextUsed">--</span>
+          <span class="active-ctx-sep">/</span>
+          <span class="active-ctx-limit" id="activeContextLimit">--</span>
+          <span class="active-ctx-pct" id="activeContextPct">--%</span>
+        </div>
+      </div>
+      <div class="active-ctx-bar-bg">
+        <div class="active-ctx-bar-fill" id="activeContextBarFill" style="width: 0%;"></div>
+      </div>
+    </div>
+
+    <!-- Row 3: Active Model & Turns / Total Tokens -->
+    <div class="active-session-footer">
+      <span class="active-model-tag" id="activeSessionModel">🤖 --</span>
+      <span class="active-meta-text" id="activeSessionStats">-- 轮 · 累计 --</span>
+    </div>
+  </div>
+
+
+  <!-- Section 2: Tokens Today -->
+  <div class="section-title" id="secToday">今日 Token 消耗大盘</div>
+
+  <div class="card">
+    <div class="token-headline">
+      <div>
+        <div class="token-headline-val" id="todayTotal">--</div>
+        <div class="token-headline-sub" id="todayTurns">-- 轮交互 · -- 个会话</div>
+      </div>
+      <div class="cache-pill" id="cacheHitPill">
+        <span id="lblCacheHit">⚡ 缓存率</span> <span id="cacheHitRate">--%</span>
+      </div>
+    </div>
+    </div>
+
+    <!-- Segmented Proportion Bar -->
+    <div class="segmented-bar">
+      <div class="seg-input" id="segInput" style="width: 25%;" title="新鲜输入"></div>
+      <div class="seg-cache" id="segCache" style="width: 65%;" title="提示词缓存"></div>
+      <div class="seg-output" id="segOutput" style="width: 5%;" title="模型生成"></div>
+      <div class="seg-think" id="segThink" style="width: 5%;" title="思考推理"></div>
+    </div>
+
+    <!-- 2x2 Grid -->
+    <div class="grid-2x2">
+      <div class="tile">
+        <div class="tile-label">
+          <span class="tile-color-mark" style="background: var(--input-color);"></span>
+          <span id="lblInput">新鲜输入 (Input)</span>
+        </div>
+        <div class="tile-val" id="valInput">--</div>
+        <div class="tile-sub" id="subInput">--</div>
+      </div>
+      <div class="tile">
+        <div class="tile-label">
+          <span class="tile-color-mark" style="background: var(--cache-color);"></span>
+          <span id="lblCache">提示词缓存 (Cache)</span>
+        </div>
+        <div class="tile-val" id="valCache">--</div>
+        <div class="tile-sub" id="subCache">大幅提速减负</div>
+      </div>
+      <div class="tile">
+        <div class="tile-label">
+          <span class="tile-color-mark" style="background: var(--output-color);"></span>
+          <span id="lblOutput">生成输出 (Output)</span>
+        </div>
+        <div class="tile-val" id="valOutput">--</div>
+        <div class="tile-sub" id="subOutput">--</div>
+      </div>
+      <div class="tile">
+        <div class="tile-label">
+          <span class="tile-color-mark" style="background: var(--think-color);"></span>
+          <span id="lblThink">思考推理 (Thinking)</span>
+        </div>
+        <div class="tile-val" id="valThink">--</div>
+        <div class="tile-sub" id="subThink">思维链推演</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Section 3: GitHub Activity Heatmap -->
+  <div class="section-title">
+    <span id="lblHeatmap">GitHub 活跃贡献热力图</span>
+    <span id="heatHoverDate" style="font-size: 10px; font-weight: normal; color: var(--text-muted);">鼠标悬停方块查看详情</span>
+  </div>
+  <div class="card heatmap-card">
+    <div class="heat-summary-bar">
+      <div class="heat-summary-item" title="统计周期内的实际活跃天数">
+        <span class="heat-summary-dot"></span>
+        <span class="heat-summary-label" id="lblHeatActive">活跃:</span>
+        <span class="heat-summary-val" id="heatStatActive">-- 天</span>
+      </div>
+      <div class="heat-summary-divider">·</div>
+      <div class="heat-summary-item" title="单日 Token 消耗最高峰值">
+        <span>🔥</span>
+        <span class="heat-summary-label" id="lblHeatPeak">峰值:</span>
+        <span class="heat-summary-val" id="heatStatPeak">--</span>
+      </div>
+      <div class="heat-summary-divider" id="heatStreakDivider">·</div>
+      <div class="heat-summary-item" id="heatStreakItem" title="当前连续活跃编码天数">
+        <span>⚡</span>
+        <span class="heat-summary-label" id="lblHeatStreak">连续:</span>
+        <span class="heat-summary-val" id="heatStatStreak">-- 天</span>
+      </div>
+    </div>
+
+    <div class="github-heatmap-wrapper">
+      <div class="github-weekdays-col">
+        <div class="github-weekdays-spacer"></div>
+        <div class="github-day-lbl">Mon</div>
+        <div class="github-day-lbl"></div>
+        <div class="github-day-lbl">Wed</div>
+        <div class="github-day-lbl"></div>
+        <div class="github-day-lbl">Fri</div>
+        <div class="github-day-lbl"></div>
+        <div class="github-day-lbl"></div>
+      </div>
+      <div class="github-heatmap-section" id="githubHeatmapSection">
+        <div class="github-months-row" id="githubMonthsRow"></div>
+        <div class="github-weeks-grid" id="githubWeeksGrid"></div>
+      </div>
+    </div>
+
+    <div class="heatmap-footer">
+      <span id="heatTotalTokens">近 24 周累计 --</span>
+      <div class="heatmap-legend">
+        <span id="lblHeatLess">Less</span>
+        <div class="legend-box heat-lvl-0"></div>
+        <div class="legend-box heat-lvl-1"></div>
+        <div class="legend-box heat-lvl-2"></div>
+        <div class="legend-box heat-lvl-3"></div>
+        <div class="legend-box heat-lvl-4"></div>
+        <span id="lblHeatMore">More</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Section 4: Projects & Drill-down Sessions -->
+  <div class="section-title">
+    <span id="lblHistory">历史项目与会话明细</span>
+    <span id="lblHistorySub" style="font-size: 10px; font-weight: 400;">点击展开会话</span>
+  </div>
+  <div id="projectsContainer"></div>
+
+  <!-- Toast -->
+  <div class="toast" id="toast">已复制报告到剪贴板</div>
+
+    <script src="./app.js"></script>
+</body>
+</html>

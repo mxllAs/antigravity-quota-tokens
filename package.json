@@ -1,0 +1,131 @@
+{
+  "name": "antigravity-quota-tokens",
+  "displayName": "Antigravity Quota & Token Monitor",
+  "description": "Lightweight status bar & activity bar monitor for Google Antigravity model quotas and one-click detailed token analytics.",
+  "version": "1.0.16",
+  "publisher": "local",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "icon": "assets/icon.png",
+  "categories": [
+    "AI",
+    "Productivity",
+    "Visualization"
+  ],
+  "keywords": [
+    "antigravity",
+    "quota",
+    "token",
+    "gemini",
+    "claude",
+    "status bar",
+    "activity bar",
+    "usage"
+  ],
+  "activationEvents": [
+    "onStartupFinished",
+    "onView:antigravity-quota-sidebar"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "antigravity-quota-container",
+          "title": "Antigravity Quota & Tokens",
+          "icon": "assets/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "antigravity-quota-container": [
+        {
+          "type": "webview",
+          "id": "antigravity-quota-sidebar",
+          "name": "配额与 Token 统计"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "antigravity-quota.showDetails",
+        "title": "Antigravity: 查看配额与 Token 详情",
+        "icon": "$(graph)"
+      },
+      {
+        "command": "antigravity-quota.refresh",
+        "title": "Antigravity: 刷新数据",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "antigravity-quota.copyReport",
+        "title": "Antigravity: 复制 Token 统计报告",
+        "icon": "$(clippy)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "antigravity-quota.refresh",
+          "when": "view == antigravity-quota-sidebar",
+          "group": "navigation@1"
+        },
+        {
+          "command": "antigravity-quota.copyReport",
+          "when": "view == antigravity-quota-sidebar",
+          "group": "navigation@2"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Antigravity Quota & Token Monitor",
+      "properties": {
+        "antigravityQuota.language": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "zh",
+            "en"
+          ],
+          "enumDescriptions": [
+            "Auto: Follow VS Code interface language / 跟随系统界面语言",
+            "Simplified Chinese / 简体中文",
+            "English / 英文"
+          ],
+          "default": "auto",
+          "description": "Display language for Antigravity Quota & Token Monitor (显示语言)。"
+        },
+        "antigravityQuota.showStatusBar": {
+          "type": "boolean",
+          "default": true,
+          "description": "是否在底部状态栏显示实时配额指示器。"
+        },
+        "antigravityQuota.autoRefreshSeconds": {
+          "type": "number",
+          "default": 60,
+          "description": "自动刷新频率（秒，最低 15 秒）。"
+        },
+        "antigravityQuota.showGemini": {
+          "type": "boolean",
+          "default": true,
+          "description": "是否在状态栏显示 Gemini 配额。"
+        },
+        "antigravityQuota.showClaude": {
+          "type": "boolean",
+          "default": true,
+          "description": "是否在状态栏显示 Claude 配额。"
+        },
+        "antigravityQuota.pythonPath": {
+          "type": "string",
+          "default": "",
+          "description": "Python 解释器路径（留空则自动检测）。"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "test": "node -c extension.js && node -c src/quota_detector.js && node -c src/webview_ui.js && node -c src/views/app.js && python -m py_compile src/token_collector.py"
+  }
+}

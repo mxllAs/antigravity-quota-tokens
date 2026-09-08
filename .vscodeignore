@@ -1,0 +1,6 @@
+.git
+.gitignore
+.vscode
+**/*.pyc
+**/__pycache__/**
+*.vsix
