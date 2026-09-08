@@ -168,10 +168,10 @@ Press <kbd>Ctrl + ,</kbd> and search for `antigravityQuota`:
 
 ### Method 1: Install from VSIX (Recommended)
 
-1. Download the latest packaged release: `antigravity-quota-tokens-1.0.16.vsix`;
+1. Download the latest packaged release: `releases/antigravity-quota-tokens-1.0.16.vsix`;
 2. In Antigravity IDE, press <kbd>Ctrl + Shift + X</kbd> to open the Extensions view;
 3. Click the `...` menu on the top-right corner and select **"Install from VSIX..."**;
-4. Select `antigravity-quota-tokens-1.0.16.vsix`;
+4. Select `releases/antigravity-quota-tokens-1.0.16.vsix`;
 5. Click **"Reload Window"** when prompted.
 
 ### Method 2: Build from Source
@@ -183,11 +183,11 @@ cd antigravity-quota-tokens
 # 2. Validate syntax across all modules
 npm test
 
-# 3. Package into VSIX
-npx @vscode/vsce package --no-dependencies
+# 3. Package into VSIX (automatically outputs to releases/ directory)
+npm run package
 ```
 
-The resulting package `antigravity-quota-tokens-x.x.x.vsix` will be generated in the root directory.
+The resulting package `antigravity-quota-tokens-x.x.x.vsix` will be generated in the `releases/` directory.
 
 ---
 

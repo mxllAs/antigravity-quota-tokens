@@ -126,6 +126,7 @@
     }
   },
   "scripts": {
-    "test": "node -c extension.js && node -c src/quota_detector.js && node -c src/webview_ui.js && node -c src/views/app.js && python -m py_compile src/token_collector.py"
+    "test": "node -c extension.js && node -c src/quota_detector.js && node -c src/webview_ui.js && node -c src/views/app.js && python -m py_compile src/token_collector.py",
+    "package": "npx @vscode/vsce package --no-dependencies -o releases/"
   }
 }

@@ -169,7 +169,7 @@ Google Antigravity 采用双轨额度机制。本插件通过底层 Connect-RPC 
 
 ### 方式 1：直接安装 VSIX 安装包（推荐）
 
-1. 下载最新的打包文件：`antigravity-quota-tokens-1.0.16.vsix`；
+1. 下载最新的打包文件：`releases/antigravity-quota-tokens-1.0.16.vsix`；
 2. 打开 Antigravity IDE，按快捷键 <kbd>Ctrl + Shift + X</kbd> 打开扩展面板；
 3. 点击面板右上角的 `...` 菜单，选择 **“从 VSIX 安装... (Install from VSIX...)”**；
 4. 选择该 `.vsix` 文件安装，完成后点击右下角 **“重新加载 (Reload Window)”** 即可立即享受。
@@ -185,11 +185,11 @@ cd antigravity-quota-tokens
 # 2. 运行自动化语法检测
 npm test
 
-# 3. 本地打包生成 VSIX
-npx @vscode/vsce package --no-dependencies
+# 3. 本地打包生成 VSIX（自动输出至 releases/ 目录）
+npm run package
 ```
 
-打包完成后将在根目录下生成 `antigravity-quota-tokens-x.x.x.vsix`。
+打包完成后将在 `releases/` 目录下生成 `antigravity-quota-tokens-x.x.x.vsix`。
 
 ---
 
