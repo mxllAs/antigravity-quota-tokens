@@ -3,7 +3,7 @@
   "displayName": "Antigravity Quota & Token Monitor",
   "description": "Lightweight status bar & activity bar monitor for Google Antigravity model quotas and one-click detailed token analytics.",
   "version": "1.0.16",
-  "publisher": "local",
+  "publisher": "isArray",
   "license": "MIT",
   "repository": {
     "type": "git",
