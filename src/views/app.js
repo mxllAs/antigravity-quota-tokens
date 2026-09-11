@@ -271,7 +271,13 @@ const vscode = (typeof acquireVsCodeApi === 'function') ? acquireVsCodeApi() : {
           document.getElementById('accountName').innerText = name;
           document.getElementById('accountEmail').innerText = quota.user_email || (currentLang === 'en' ? 'Official Account' : '官方账号');
           document.getElementById('accountTier').innerText = quota.tier_name || 'Google AI';
-          document.getElementById('accountAvatar').innerText = name.charAt(0) || '👤';
+
+          const avatarEl = document.getElementById('accountAvatar');
+          if (quota.user_avatar) {
+            avatarEl.innerHTML = `<img src="${quota.user_avatar}" class="account-avatar-img" alt="${name}" referrerpolicy="no-referrer" />`;
+          } else {
+            avatarEl.innerText = name.charAt(0) || '👤';
+          }
         }
 
         // 2. Quotas (Gemini Pool & Claude/GPT Pool)

@@ -1,6 +1,32 @@
 const { exec } = require('child_process');
 const https = require('https');
 const http = require('http');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+
+function detectUserAvatar() {
+  try {
+    const userHome = os.homedir();
+    const appData = process.env.APPDATA || path.join(userHome, 'AppData', 'Roaming');
+    const candidates = [
+      path.join(appData, 'Antigravity', 'User', 'globalStorage', 'state.vscdb'),
+      path.join(userHome, '.config', 'Antigravity', 'User', 'globalStorage', 'state.vscdb'),
+      path.join(userHome, 'Library', 'Application Support', 'Antigravity', 'User', 'globalStorage', 'state.vscdb'),
+    ];
+    for (const p of candidates) {
+      if (fs.existsSync(p)) {
+        const buf = fs.readFileSync(p);
+        const text = buf.toString('latin1');
+        const match = text.match(/https:\/\/lh\d*\.googleusercontent\.com\/[A-Za-z0-9_\-=/]+/);
+        if (match) {
+          return match[0];
+        }
+      }
+    }
+  } catch (e) {}
+  return '';
+}
 
 let cachedConn = null;
 let cachedQuota = null;
@@ -187,6 +213,7 @@ function parseQuota(status, quotaSummary) {
 
   const user_name = status?.name || 'User';
   const user_email = status?.email || '';
+  const user_avatar = detectUserAvatar() || status?.profileUrl || status?.picture || '';
   const tier_name = status?.userTier?.name || 'Google AI Pro';
 
   function parseBucketGroup(group) {
@@ -302,6 +329,7 @@ function parseQuota(status, quotaSummary) {
     fetched_at: Date.now(),
     user_name,
     user_email,
+    user_avatar,
     tier_name,
     prompt_credits: status?.planStatus?.availablePromptCredits ?? null,
     flow_credits: status?.planStatus?.availableFlowCredits ?? null,
