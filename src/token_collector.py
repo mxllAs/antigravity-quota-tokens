@@ -11,6 +11,7 @@ import json
 import sqlite3
 import struct
 import urllib.parse
+import re
 from pathlib import Path
 from datetime import datetime
 from collections import defaultdict
@@ -350,8 +351,24 @@ def collect_tokens(target_date=None, target_workspace=""):
                                         cp["output_tokens"] += out
                                         cp["thinking_tokens"] += thinking
 
-                                    # Check timestamp
-                                    ts = step_times.get(idx)
+                                    # Accurately resolve step timestamp from last_step_index
+                                    step_idx = None
+                                    if 20 in sub1:
+                                        for _, b20 in sub1[20]:
+                                            if b'last_step_index' in b20:
+                                                m_step = re.search(rb'last_step_index\x12[\x01-\x10](\d+)', b20)
+                                                if m_step:
+                                                    try:
+                                                        step_idx = int(m_step.group(1))
+                                                        break
+                                                    except Exception:
+                                                        pass
+
+                                    ts = None
+                                    if step_idx is not None and step_idx in step_times:
+                                        ts = step_times[step_idx]
+                                    if not ts:
+                                        ts = step_times.get(idx)
                                     if not ts:
                                         ts = int(os.path.getmtime(db_path))
                                     step_date = datetime.fromtimestamp(ts).strftime('%Y-%m-%d')

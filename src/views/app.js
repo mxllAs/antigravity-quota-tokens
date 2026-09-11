@@ -55,7 +55,8 @@ const vscode = (typeof acquireVsCodeApi === 'function') ? acquireVsCodeApi() : {
         currentTag: ' (当前)',
         sessionWord: '会话',
         copiedToast: '报告已复制到剪贴板！',
-        refreshingToast: '正在重新探测账号与配额...',
+        delProjectTip: '清理该项目的全部历史会话',
+        delSessionTip: '删除此会话记录',
         contextPrefix: '上下文: ',
       },
       en: {
@@ -107,8 +108,8 @@ const vscode = (typeof acquireVsCodeApi === 'function') ? acquireVsCodeApi() : {
         subHistory: 'Click to expand',
         currentTag: ' (Current)',
         sessionWord: 'Session',
-        copiedToast: 'Report copied to clipboard!',
-        refreshingToast: 'Detecting account and quota...',
+        delProjectTip: 'Clean all sessions of this project',
+        delSessionTip: 'Delete this session',
         contextPrefix: 'Context: ',
       }
     };
@@ -621,9 +622,29 @@ const vscode = (typeof acquireVsCodeApi === 'function') ? acquireVsCodeApi() : {
         left.appendChild(arrow);
         left.appendChild(title);
 
-        const right = document.createElement('span');
-        right.className = 'project-total';
-        right.innerText = formatUnit(p.total_tokens);
+        const right = document.createElement('div');
+        right.className = 'project-header-right';
+
+        const totalSpan = document.createElement('span');
+        totalSpan.className = 'project-total';
+        totalSpan.innerText = formatUnit(p.total_tokens);
+        right.appendChild(totalSpan);
+
+        if (!isCurrent) {
+          const delProjBtn = document.createElement('button');
+          delProjBtn.className = 'btn-icon-action btn-delete-project';
+          delProjBtn.title = t.delProjectTip;
+          delProjBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>';
+          delProjBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            vscode.postMessage({
+              command: 'deleteProject',
+              projectName: p.name,
+              sessionItems: p.session_items || []
+            });
+          });
+          right.appendChild(delProjBtn);
+        }
 
         header.appendChild(left);
         header.appendChild(right);
@@ -637,10 +658,10 @@ const vscode = (typeof acquireVsCodeApi === 'function') ? acquireVsCodeApi() : {
           p.session_items.forEach((s) => {
             const row = document.createElement('div');
             row.className = 'session-item';
-            row.title = (currentLang === 'en' ? 'Session ID: ' : '会话完整ID: ') + s.full_id + '\\n' +
-              (currentLang === 'en' ? 'Input: ' : '输入: ') + formatUnit(s.input_tokens) + '\\n' +
-              (currentLang === 'en' ? 'Cache: ' : '缓存: ') + formatUnit(s.cached_tokens) + '\\n' +
-              (currentLang === 'en' ? 'Output: ' : '输出: ') + formatUnit(s.output_tokens) + '\\n' +
+            row.title = (currentLang === 'en' ? 'Session ID: ' : '会话完整ID: ') + s.full_id + '\n' +
+              (currentLang === 'en' ? 'Input: ' : '输入: ') + formatUnit(s.input_tokens) + '\n' +
+              (currentLang === 'en' ? 'Cache: ' : '缓存: ') + formatUnit(s.cached_tokens) + '\n' +
+              (currentLang === 'en' ? 'Output: ' : '输出: ') + formatUnit(s.output_tokens) + '\n' +
               (currentLang === 'en' ? 'Thinking: ' : '思考: ') + formatUnit(s.thinking_tokens);
 
             const meta = document.createElement('div');
@@ -676,12 +697,35 @@ const vscode = (typeof acquireVsCodeApi === 'function') ? acquireVsCodeApi() : {
             meta.appendChild(titleLine);
             meta.appendChild(subLine);
 
+            const rightCol = document.createElement('div');
+            rightCol.className = 'session-right-col';
+
             const tokenSpan = document.createElement('span');
             tokenSpan.className = 'session-tokens';
             tokenSpan.innerText = formatUnit(s.total_tokens);
+            rightCol.appendChild(tokenSpan);
+
+            const activeSessId = (currentProj && currentProj.active_session) ? (currentProj.active_session.full_id || currentProj.active_session.id) : '';
+            const isThisSessionActive = activeSessId && (s.full_id === activeSessId || s.id === activeSessId);
+
+            if (!isThisSessionActive) {
+              const delSessBtn = document.createElement('button');
+              delSessBtn.className = 'btn-icon-action btn-delete-session';
+              delSessBtn.title = t.delSessionTip;
+              delSessBtn.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>';
+              delSessBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                vscode.postMessage({
+                  command: 'deleteSession',
+                  sessionId: s.full_id || s.id,
+                  sessionTitle: s.title || s.id
+                });
+              });
+              rightCol.appendChild(delSessBtn);
+            }
 
             row.appendChild(meta);
-            row.appendChild(tokenSpan);
+            row.appendChild(rightCol);
             sessBox.appendChild(row);
           });
 

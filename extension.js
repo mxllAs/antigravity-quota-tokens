@@ -4,6 +4,7 @@ const fs = require('fs');
 const { execFile } = require('child_process');
 const { getLiveQuota } = require('./src/quota_detector');
 const { getWebviewHtml } = require('./src/webview_ui');
+const { deleteSessionFiles, deleteProjectSessions } = require('./src/session_cleaner');
 
 let statusBarItem;
 let autoRefreshTimer = null;
@@ -422,6 +423,75 @@ class QuotaWebviewViewProvider {
         await config.update('language', lang, vscode.ConfigurationTarget.Global);
         this.update();
         renderStatusBar();
+      } else if (data.command === 'deleteSession') {
+        const lang = getEffectiveLanguage();
+        const activeSessionId = lastTokenData?.current_session?.full_id || lastTokenData?.current_project?.active_session?.full_id;
+        if (activeSessionId && data.sessionId && activeSessionId.toLowerCase() === data.sessionId.toLowerCase()) {
+          const msg = lang === 'zh'
+            ? '当前会话正在运行中，无法直接删除。如需删除，请先在 IDE 中切换至其他会话或新建会话。'
+            : 'The active session is currently in use and cannot be deleted. Please switch to another conversation first.';
+          vscode.window.showWarningMessage(msg);
+          return;
+        }
+
+        const titleDisplay = data.sessionTitle || (data.sessionId ? data.sessionId.slice(0, 8) : 'Session');
+        const confirmPrompt = lang === 'zh'
+          ? `确定要删除历史会话「${titleDisplay}」吗？\n\n此操作将清理本地 SQLite 数据库及 brain 缓存目录（不可逆）。您的项目工程代码完全不受影响。`
+          : `Are you sure you want to delete session "${titleDisplay}"?\n\nThis will remove the local SQLite database and brain cache. Your project source code will NOT be affected.`;
+        const confirmBtn = lang === 'zh' ? '确认删除' : 'Delete';
+
+        const action = await vscode.window.showWarningMessage(confirmPrompt, { modal: true }, confirmBtn);
+        if (action === confirmBtn) {
+          const res = deleteSessionFiles(data.sessionId);
+          if (res.success) {
+            const successMsg = lang === 'zh'
+              ? `已成功删除会话，释放了 ${res.freedFormatted} 磁盘空间。`
+              : `Session deleted successfully, freed ${res.freedFormatted} disk space.`;
+            vscode.window.showInformationMessage(successMsg);
+            await updateDataAndStatusBar(true);
+          } else {
+            const failMsg = lang === 'zh'
+              ? '删除失败：未找到对应的本地会话文件。'
+              : 'Failed to delete: local session files not found.';
+            vscode.window.showErrorMessage(failMsg);
+          }
+        }
+      } else if (data.command === 'deleteProject') {
+        const lang = getEffectiveLanguage();
+        const activeSessionId = lastTokenData?.current_session?.full_id || lastTokenData?.current_project?.active_session?.full_id;
+        const sessionItems = Array.isArray(data.sessionItems) ? data.sessionItems : [];
+        const hasActive = sessionItems.some(s => s.full_id && activeSessionId && s.full_id.toLowerCase() === activeSessionId.toLowerCase());
+
+        if (hasActive) {
+          const msg = lang === 'zh'
+            ? `项目「${data.projectName}」包含当前正在运行的活跃会话，无法一键删除整项目。请先在 IDE 中切换至其他会话。`
+            : `Project "${data.projectName}" contains the active conversation. Please switch conversations before deleting.`;
+          vscode.window.showWarningMessage(msg);
+          return;
+        }
+
+        const count = sessionItems.length;
+        const confirmPrompt = lang === 'zh'
+          ? `确定要清理项目「${data.projectName}」下的全部 ${count} 个历史会话记录吗？\n\n此操作将清理该项目的所有本地数据库与上下文缓存（不可逆）。您的项目工程代码完全不受影响。`
+          : `Are you sure you want to clean all ${count} sessions for project "${data.projectName}"?\n\nThis will remove all conversation databases and cache files. Your project source code will NOT be affected.`;
+        const confirmBtn = lang === 'zh' ? '确认清空' : 'Clean All';
+
+        const action = await vscode.window.showWarningMessage(confirmPrompt, { modal: true }, confirmBtn);
+        if (action === confirmBtn) {
+          const res = deleteProjectSessions(sessionItems);
+          if (res.success) {
+            const successMsg = lang === 'zh'
+              ? `已成功清理项目「${data.projectName}」的 ${res.deletedSessionsCount} 个会话，释放了 ${res.freedFormatted} 磁盘空间。`
+              : `Successfully cleaned ${res.deletedSessionsCount} sessions for "${data.projectName}", freed ${res.freedFormatted} disk space.`;
+            vscode.window.showInformationMessage(successMsg);
+            await updateDataAndStatusBar(true);
+          } else {
+            const failMsg = lang === 'zh'
+              ? '清理失败：未找到可清理的本地会话文件。'
+              : 'Failed to clean: no session files found.';
+            vscode.window.showErrorMessage(failMsg);
+          }
+        }
       }
     });
 
