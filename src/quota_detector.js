@@ -8,17 +8,35 @@ const os = require('os');
 function detectUserAvatar() {
   try {
     const userHome = os.homedir();
-    const appData = process.env.APPDATA || path.join(userHome, 'AppData', 'Roaming');
+    const appData =
+      process.env.APPDATA || path.join(userHome, 'AppData', 'Roaming');
     const candidates = [
       path.join(appData, 'Antigravity', 'User', 'globalStorage', 'state.vscdb'),
-      path.join(userHome, '.config', 'Antigravity', 'User', 'globalStorage', 'state.vscdb'),
-      path.join(userHome, 'Library', 'Application Support', 'Antigravity', 'User', 'globalStorage', 'state.vscdb'),
+      path.join(
+        userHome,
+        '.config',
+        'Antigravity',
+        'User',
+        'globalStorage',
+        'state.vscdb'
+      ),
+      path.join(
+        userHome,
+        'Library',
+        'Application Support',
+        'Antigravity',
+        'User',
+        'globalStorage',
+        'state.vscdb'
+      ),
     ];
     for (const p of candidates) {
       if (fs.existsSync(p)) {
         const buf = fs.readFileSync(p);
         const text = buf.toString('latin1');
-        const match = text.match(/https:\/\/lh\d*\.googleusercontent\.com\/[A-Za-z0-9_\-=/]+/);
+        const match = text.match(
+          /https:\/\/lh\d*\.googleusercontent\.com\/[A-Za-z0-9_\-=/]+/
+        );
         if (match) {
           return match[0];
         }
@@ -213,7 +231,8 @@ function parseQuota(status, quotaSummary) {
 
   const user_name = status?.name || 'User';
   const user_email = status?.email || '';
-  const user_avatar = detectUserAvatar() || status?.profileUrl || status?.picture || '';
+  const user_avatar =
+    detectUserAvatar() || status?.profileUrl || status?.picture || '';
   const tier_name = status?.userTier?.name || 'Google AI Pro';
 
   function parseBucketGroup(group) {
