@@ -1,0 +1,81 @@
+name: Release Extension
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build & Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Run Tests
+        run: npm test
+
+      - name: Package Extension VSIX
+        run: |
+          mkdir -p releases
+          npm run package
+
+      - name: Locate VSIX Package
+        id: vsix
+        run: |
+          VSIX_PATH=$(find releases -name "*.vsix" | head -n 1)
+          if [ -z "$VSIX_PATH" ]; then
+            echo "Error: No .vsix file generated in releases directory!"
+            exit 1
+          fi
+          echo "path=$VSIX_PATH" >> $GITHUB_OUTPUT
+          echo "Found VSIX Package: $VSIX_PATH"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.vsix.outputs.path }}
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish to VS Code Marketplace
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: |
+          if [ -n "$VSCE_PAT" ]; then
+            echo "Publishing to VS Code Marketplace..."
+            npx @vscode/vsce publish --packagePath "${{ steps.vsix.outputs.path }}" -p "$VSCE_PAT"
+          else
+            echo "⚠️ VSCE_PAT secret is not set. Skipping VS Code Marketplace publish."
+          fi
+
+      - name: Publish to Open VSX Registry
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        run: |
+          if [ -n "$OVSX_PAT" ]; then
+            echo "Publishing to Open VSX Registry..."
+            npx ovsx publish "${{ steps.vsix.outputs.path }}" -p "$OVSX_PAT"
+          else
+            echo "⚠️ OVSX_PAT secret is not set. Skipping Open VSX publish."
+          fi

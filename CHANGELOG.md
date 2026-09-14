@@ -5,6 +5,16 @@
 
 ---
 
+## [1.1.0] - 2026-09-14
+
+### ✨ 新增与优化 (Enhancements)
+* **跨平台原生头像检测 (Cross-platform Native Google Avatar Detection)**：
+  * 增强用户头像路径探测算法，全面适配 Windows、macOS 与 Linux 系统下 Antigravity IDE 本地配置提取。
+* **CI/CD 自动化多端同步发布 (Automated Multi-Platform Release Pipeline)**：
+  * 新增 GitHub Actions 工作流，通过打 Tag 一键自动构建、生成 GitHub Release、同步上架至微软 VS Code Marketplace 及 Eclipse Open VSX Registry。
+
+---
+
 ## [1.0.18] - 2026-09-11
 
 ### ✨ 新增特性 (Added)
