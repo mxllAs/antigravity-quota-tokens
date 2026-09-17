@@ -212,6 +212,17 @@ Antigravity IDE 的右侧 AI 聊天面板是深度集成在底层 VS Code 工作
 
 ---
 
+## ☕ 支持与赞助 (Sponsor)
+
+如果 **Antigravity Quota & Token Monitor** 对您的日常开发和效率提升有所帮助，欢迎请作者喝一杯咖啡 ☕ 您的每一份支持都是本项目持续迭代与维护的最大动力！
+
+<div align="center">
+  <img src="./assets/sponsor.jpg" width="220" alt="微信赞赏码" />
+  <p><i>微信扫一扫 · 赞赏支持</i></p>
+</div>
+
+---
+
 ## 📄 开源许可证
 
 本项目基于 MIT License 协议开源。

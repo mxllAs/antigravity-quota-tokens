@@ -210,6 +210,17 @@ Antigravity IDE's right-hand AI chat is an internal, proprietary component of th
 
 ---
 
+## ☕ Support & Sponsor
+
+If **Antigravity Quota & Token Monitor** has helped you in your daily coding workflows, consider buying the author a coffee ☕ Your generosity keeps this project actively maintained and continuously improved!
+
+<div align="center">
+  <img src="./assets/sponsor.jpg" width="220" alt="WeChat Sponsor QR" />
+  <p><i>Scan with WeChat · Buy Me a Coffee ☕</i></p>
+</div>
+
+---
+
 ## 📄 License
 
 This project is licensed under the MIT License.
