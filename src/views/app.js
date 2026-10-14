@@ -66,6 +66,8 @@ const I18N = {
     delProjectTip: '清理该项目的全部历史会话',
     delSessionTip: '删除此会话记录',
     contextPrefix: '上下文: ',
+    archivedTag: '(已归档)',
+    cleanTip: '本地会话文件已清理，Token历史与热力图已永久归档',
   },
   en: {
     topTitle: '⚡ Real-time Quota & Usage',
@@ -123,6 +125,8 @@ const I18N = {
     delProjectTip: 'Clean all sessions of this project',
     delSessionTip: 'Delete this session',
     contextPrefix: 'Context: ',
+    archivedTag: '(Archived)',
+    cleanTip: 'Local files freed, Token history permanently archived',
   },
 };
 
@@ -743,6 +747,7 @@ function renderProjectsWithSessions(projects, currentProj) {
 
     const isCurrent = p.name === currentProjName;
     const hasSessions = p.session_items && p.session_items.length > 0;
+    const isArchived = p.is_archived || (hasSessions && p.session_items.every((s) => s.is_deleted_locally));
 
     // Header Row
     const header = document.createElement('div');
@@ -758,8 +763,17 @@ function renderProjectsWithSessions(projects, currentProj) {
     const title = document.createElement('span');
     title.className = 'project-title';
     title.innerText =
-      (isCurrent ? '⭐ ' : '📁 ') + p.name + (isCurrent ? t.currentTag : '');
-    title.title = p.name;
+      (isCurrent ? '⭐ ' : isArchived ? '📦 ' : '📁 ') +
+      p.name +
+      (isCurrent ? t.currentTag : '');
+    if (isArchived) {
+      const archSpan = document.createElement('span');
+      archSpan.className = 'project-archived-tag';
+      archSpan.innerText = t.archivedTag;
+      archSpan.title = t.cleanTip;
+      title.appendChild(archSpan);
+    }
+    title.title = p.name + (isArchived ? ' ' + t.cleanTip : '');
 
     left.appendChild(arrow);
     left.appendChild(title);
@@ -772,7 +786,7 @@ function renderProjectsWithSessions(projects, currentProj) {
     totalSpan.innerText = formatUnit(p.total_tokens);
     right.appendChild(totalSpan);
 
-    if (!isCurrent) {
+    if (!isCurrent && !isArchived) {
       const delProjBtn = document.createElement('button');
       delProjBtn.className = 'btn-icon-action btn-delete-project';
       delProjBtn.title = t.delProjectTip;
@@ -839,6 +853,13 @@ function renderProjectsWithSessions(projects, currentProj) {
         subLine.className = 'session-sub-line';
         subLine.innerHTML =
           '<span>' + s.date + ' · ' + s.turns + ' ' + t.turns + '</span>';
+        if (s.is_deleted_locally) {
+          const archTag = document.createElement('span');
+          archTag.className = 'session-archived-tag';
+          archTag.innerText = t.archivedTag;
+          archTag.title = t.cleanTip;
+          subLine.appendChild(archTag);
+        }
         if (s.context_tokens > 0) {
           const ctxTag = document.createElement('span');
           ctxTag.className = 'session-ctx-tag';
@@ -872,7 +893,7 @@ function renderProjectsWithSessions(projects, currentProj) {
         const isThisSessionActive =
           activeSessId && (s.full_id === activeSessId || s.id === activeSessId);
 
-        if (!isThisSessionActive) {
+        if (!isThisSessionActive && !s.is_deleted_locally) {
           const delSessBtn = document.createElement('button');
           delSessBtn.className = 'btn-icon-action btn-delete-session';
           delSessBtn.title = t.delSessionTip;

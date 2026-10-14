@@ -3,6 +3,16 @@
 本文档记录 **Antigravity Quota & Token Monitor** 扩展的所有重要版本更新。  
 本格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，并遵循 [语义化版本规范 (SemVer)](https://semver.org/lang/zh-CN/)。
 
+## [1.2.0] - 2026-10-14
+
+### ✨ 重大新增 (Features)
+* **本地永久持久化归档引擎 (Persistent Token Archive Engine)**：
+  * 新增 `src/token_archive.js`，基于增量快照合并算法，在 VS Code 全局持久化存储区自动归档每日时间序列与全量会话数据。
+  * **热力图与总消耗永久防丢**：即使本地对话 SQLite 数据库被删除或项目被清理，历史 GitHub 24 周贡献热力图、连续打卡天数与历史累计 Token 总数绝对不丢失，实现只增不减。
+  * **快捷归档查看**：状态栏与 QuickPick 菜单新增「查看本地持久化归档 (token_history_archive.json)」选项，随时在编辑器内一键查验归档数据。
+  * **本地项目列表清爽模式**：本地会话已完全清理的项目自动从侧边栏列表中隐藏，界面专注活跃工程，底层数据完整归档备用。
+  * **预留云端同步导出接口**：内置 `exportDataForSync`，支持对外脱敏与数据导出，为后续网页大盘展示奠定基础。
+
 ---
 
 ## [1.1.1] - 2026-09-17

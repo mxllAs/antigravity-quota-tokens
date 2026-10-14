@@ -1034,6 +1034,23 @@
       flex-shrink: 0;
     }
 
+    .session-archived-tag {
+      color: #94a3b8;
+      background: rgba(148, 163, 184, 0.12);
+      padding: 0 4px;
+      border-radius: 3px;
+      font-weight: 500;
+      font-size: 9.5px;
+    }
+
+    .project-archived-tag {
+      color: #94a3b8;
+      font-size: 10px;
+      font-weight: normal;
+      margin-left: 4px;
+      opacity: 0.85;
+    }
+
     .project-header-right {
       display: flex;
       align-items: center;

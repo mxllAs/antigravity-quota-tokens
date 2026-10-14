@@ -299,6 +299,7 @@ def collect_tokens(target_date=None, target_workspace=""):
                 session_thinking = 0
                 session_turns = 0
                 session_dates = []
+                session_daily = defaultdict(lambda: {"total": 0, "input": 0, "cached": 0, "output": 0, "thinking": 0, "turns": 0})
                 last_turn_context = 0
                 last_turn_input = 0
                 last_turn_cached = 0
@@ -374,6 +375,15 @@ def collect_tokens(target_date=None, target_workspace=""):
                                     step_date = datetime.fromtimestamp(ts).strftime('%Y-%m-%d')
                                     session_dates.append(step_date)
 
+                                    # Session-level daily map for persistence archive
+                                    sd = session_daily[step_date]
+                                    sd["total"] += tot
+                                    sd["input"] += inp
+                                    sd["cached"] += cached
+                                    sd["output"] += out
+                                    sd["thinking"] += thinking
+                                    sd["turns"] += 1
+
                                     # Daily map for heatmap
                                     dm = summary["daily_map"][step_date]
                                     dm["total"] += tot
@@ -414,6 +424,7 @@ def collect_tokens(target_date=None, target_workspace=""):
                         "full_id": convo_id,
                         "title": sess_title,
                         "date": s_date,
+                        "project": project_name,
                         "model": sess_model["name"],
                         "model_id": sess_model["id"],
                         "context_window": sess_model["context_window"],
@@ -426,6 +437,7 @@ def collect_tokens(target_date=None, target_workspace=""):
                         "output_tokens": session_output,
                         "thinking_tokens": session_thinking,
                         "turns": session_turns,
+                        "daily": dict(session_daily),
                         "mtime": db_mtime
                     }
                     summary["project_sessions"][project_name].append(sess_item)

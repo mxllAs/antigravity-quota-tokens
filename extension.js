@@ -5,6 +5,7 @@ const { execFile } = require('child_process');
 const { getLiveQuota } = require('./src/quota_detector');
 const { getWebviewHtml } = require('./src/webview_ui');
 const { deleteSessionFiles, deleteProjectSessions } = require('./src/session_cleaner');
+const { getArchivePath, mergeScanWithArchive, exportDataForSync } = require('./src/token_archive');
 
 let statusBarItem;
 let autoRefreshTimer = null;
@@ -187,10 +188,14 @@ async function updateDataAndStatusBar(force = false) {
   isRefreshing = true;
 
   try {
-    const [quota, tokens] = await Promise.all([
+    const [quota, rawTokens] = await Promise.all([
       getLiveQuota(force),
       fetchTokens(),
     ]);
+
+    const storageDir = extensionContext?.globalStorageUri?.fsPath;
+    const archivePath = getArchivePath(storageDir);
+    const tokens = mergeScanWithArchive(rawTokens, archivePath);
 
     if (quota) lastQuotaData = quota;
     if (tokens) lastTokenData = tokens;
@@ -629,6 +634,11 @@ async function showQuickPickMenu() {
     action: 'show_all_projects',
   });
   items.push({
+    label: '$(database) 查看本地持久化归档 (token_history_archive.json)',
+    description: '查看防丢失持久化归档文件，确认历史项目与热力图快照',
+    action: 'open_archive',
+  });
+  items.push({
     label: '$(refresh) 立即强制刷新数据',
     description: '重新探测官方语言服务配额与 SQLite 数据库',
     action: 'refresh',
@@ -654,6 +664,15 @@ async function showQuickPickMenu() {
     copySummaryToClipboard();
   } else if (selected.action === 'show_all_projects') {
     showAllProjectsQuickPick();
+  } else if (selected.action === 'open_archive') {
+    const storageDir = extensionContext?.globalStorageUri?.fsPath;
+    const archivePath = getArchivePath(storageDir);
+    if (fs.existsSync(archivePath)) {
+      const doc = await vscode.workspace.openTextDocument(archivePath);
+      await vscode.window.showTextDocument(doc, { preview: true });
+    } else {
+      vscode.window.showInformationMessage('归档文件尚未生成，请稍后刷新。');
+    }
   }
 }
 
