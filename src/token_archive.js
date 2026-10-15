@@ -470,24 +470,38 @@ function exportDataForSync(archivePath, mode = 'public') {
   if (mode === 'anonymized') {
     // Obfuscate project names: Project 1, Project 2...
     let pIdx = 1;
-    const anonProjects = {};
-    for (const [pName, pData] of Object.entries(archive.projects || {})) {
-      anonProjects[`Project ${pIdx++}`] = {
-        total_tokens: pData.total_tokens,
-        input_tokens: pData.input_tokens,
-        cached_tokens: pData.cached_tokens,
-        output_tokens: pData.output_tokens,
-        thinking_tokens: pData.thinking_tokens,
-        sessions_count: pData.sessions_count,
-      };
+    const anonProjects = [];
+    for (const [, pData] of Object.entries(archive.projects || {})) {
+      anonProjects.push({
+        name: `Project ${pIdx++}`,
+        total_tokens: pData.total_tokens || 0,
+        input_tokens: pData.input_tokens || 0,
+        cached_tokens: pData.cached_tokens || 0,
+        output_tokens: pData.output_tokens || 0,
+        thinking_tokens: pData.thinking_tokens || 0,
+        sessions_count: pData.sessions_count || 0,
+        is_archived: !!pData.is_archived,
+      });
     }
     payload.projects = anonProjects;
     return payload;
   }
 
   // mode === 'full' (self-hosted private sync)
-  payload.projects = archive.projects;
-  payload.sessions = archive.sessions;
+  const fullProjects = [];
+  for (const [pName, pData] of Object.entries(archive.projects || {})) {
+    fullProjects.push({
+      name: pName,
+      total_tokens: pData.total_tokens || 0,
+      input_tokens: pData.input_tokens || 0,
+      cached_tokens: pData.cached_tokens || 0,
+      output_tokens: pData.output_tokens || 0,
+      thinking_tokens: pData.thinking_tokens || 0,
+      sessions_count: pData.sessions_count || 0,
+      is_archived: !!pData.is_archived,
+    });
+  }
+  payload.projects = fullProjects;
   return payload;
 }
 

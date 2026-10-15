@@ -18,6 +18,8 @@ const I18N = {
     refreshTitle: '重新检测进程与账号配额 (换账号后点此)',
     copy: '复制',
     copyTitle: '复制今日 Markdown 报告',
+    sync: '同步',
+    syncTitle: '同步数据到远程服务器 (点此立即同步 / 配置)',
     langBtn: 'EN',
     langBtnTitle: 'Switch to English / 切换为英文',
     accountTitle: '当前登录的 Antigravity 账号（更换账号后点击刷新即可热更新）',
@@ -76,6 +78,8 @@ const I18N = {
       'Detect process & account quota (Click after switching accounts)',
     copy: 'Copy',
     copyTitle: "Copy today's Markdown summary report",
+    sync: 'Sync',
+    syncTitle: 'Sync token stats to remote server (click to sync/configure)',
     langBtn: '中文',
     langBtnTitle: 'Switch to Chinese / 切换为中文',
     accountTitle:
@@ -199,6 +203,8 @@ function applyI18n() {
   document.getElementById('btnRefresh').title = t.refreshTitle;
   document.getElementById('lblCopy').innerText = t.copy;
   document.getElementById('btnCopy').title = t.copyTitle;
+  document.getElementById('lblSync').innerText = t.sync;
+  document.getElementById('btnSync').title = t.syncTitle;
   document.getElementById('cardAccount').title = t.accountTitle;
 
   document.getElementById('secQuotas').innerText = t.secQuotas;
@@ -253,6 +259,11 @@ document.getElementById('btnCopy').addEventListener('click', () => {
   const t = I18N[currentLang] || I18N.zh;
   vscode.postMessage({ command: 'copy' });
   showToast(t.copiedToast);
+});
+
+// Sync action
+document.getElementById('btnSync').addEventListener('click', () => {
+  vscode.postMessage({ command: 'sync' });
 });
 
 // Language toggle action

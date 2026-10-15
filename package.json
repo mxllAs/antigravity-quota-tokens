@@ -71,6 +71,16 @@
         "command": "antigravity-quota.copyReport",
         "title": "Antigravity: 复制 Token 统计报告",
         "icon": "$(clippy)"
+      },
+      {
+        "command": "antigravity-quota.syncRemote",
+        "title": "Antigravity: 立即同步 Token 数据到远程服务器",
+        "icon": "$(cloud-upload)"
+      },
+      {
+        "command": "antigravity-quota.configSync",
+        "title": "Antigravity: 配置云端同步地址与密钥",
+        "icon": "$(gear)"
       }
     ],
     "menus": {
@@ -81,9 +91,14 @@
           "group": "navigation@1"
         },
         {
-          "command": "antigravity-quota.copyReport",
+          "command": "antigravity-quota.syncRemote",
           "when": "view == antigravity-quota-sidebar",
           "group": "navigation@2"
+        },
+        {
+          "command": "antigravity-quota.copyReport",
+          "when": "view == antigravity-quota-sidebar",
+          "group": "navigation@3"
         }
       ]
     },
@@ -129,12 +144,47 @@
           "type": "string",
           "default": "",
           "description": "Python 解释器路径（留空则自动检测）。"
+        },
+        "antigravityQuota.sync.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "是否开启 Token 统计数据远程云端/服务器自动同步 (Enable remote sync)。"
+        },
+        "antigravityQuota.sync.endpoint": {
+          "type": "string",
+          "default": "",
+          "description": "远程同步接口完整地址 (例如: http://localhost:9527/token-stats/sync 或 https://your-domain.com/token-stats/sync)。"
+        },
+        "antigravityQuota.sync.secretKey": {
+          "type": "string",
+          "default": "",
+          "description": "数据同步鉴权密钥（与服务端环境变量 TOKEN_SYNC_SECRET 保持一致）。"
+        },
+        "antigravityQuota.sync.intervalMinutes": {
+          "type": "number",
+          "default": 10,
+          "description": "定时自动同步到服务器的间隔（分钟，最低 1 分钟，默认 10 分钟）。"
+        },
+        "antigravityQuota.sync.mode": {
+          "type": "string",
+          "enum": [
+            "full",
+            "anonymized",
+            "public"
+          ],
+          "enumDescriptions": [
+            "完整模式：同步包含项目名称与项目 Token 的完整数据",
+            "脱敏模式：自动将项目名称匿名化为 Project 1、Project 2 等",
+            "纯热力图模式：仅同步全量每日热力图与总消耗，完全不上传任何项目名"
+          ],
+          "default": "full",
+          "description": "远程同步的隐私数据模式。"
         }
       }
     }
   },
   "scripts": {
-    "test": "node -c extension.js && node -c src/quota_detector.js && node -c src/token_archive.js && node -c src/session_cleaner.js && node -c src/webview_ui.js && node -c src/views/app.js && python -m py_compile src/token_collector.py",
+    "test": "node -c extension.js && node -c src/quota_detector.js && node -c src/token_archive.js && node -c src/sync_client.js && node -c src/session_cleaner.js && node -c src/webview_ui.js && node -c src/views/app.js && python -m py_compile src/token_collector.py",
     "package": "npx @vscode/vsce package --no-dependencies -o releases/"
   }
 }

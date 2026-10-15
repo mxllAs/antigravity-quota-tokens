@@ -6,6 +6,7 @@ const { getLiveQuota } = require('./src/quota_detector');
 const { getWebviewHtml } = require('./src/webview_ui');
 const { deleteSessionFiles, deleteProjectSessions } = require('./src/session_cleaner');
 const { getArchivePath, mergeScanWithArchive, exportDataForSync } = require('./src/token_archive');
+const { pushTokenStatsToRemote } = require('./src/sync_client');
 
 let statusBarItem;
 let autoRefreshTimer = null;
@@ -14,6 +15,7 @@ let lastTokenData = null;
 let isRefreshing = false;
 let webviewProvider = null;
 let extensionContext = null;
+let lastRemoteSyncTime = 0;
 
 // ==================== Utilities ====================
 
@@ -203,6 +205,19 @@ async function updateDataAndStatusBar(force = false) {
     renderStatusBar();
     if (webviewProvider) {
       webviewProvider.update();
+    }
+
+    // Check automatic periodic sync to remote server
+    const syncConfig = vscode.workspace.getConfiguration('antigravityQuota');
+    if (syncConfig.get('sync.enabled', false)) {
+      const endpoint = syncConfig.get('sync.endpoint', '').trim();
+      const intervalMin = Math.max(1, syncConfig.get('sync.intervalMinutes', 10));
+      const now = Date.now();
+      if (endpoint && (now - lastRemoteSyncTime >= intervalMin * 60 * 1000)) {
+        triggerRemoteSync(true).catch((err) => {
+          console.warn('[Antigravity Quota] Periodic remote sync error:', err);
+        });
+      }
     }
   } catch (err) {
     if (statusBarItem) {
@@ -497,6 +512,14 @@ class QuotaWebviewViewProvider {
             vscode.window.showErrorMessage(failMsg);
           }
         }
+      } else if (data.command === 'sync') {
+        const config = vscode.workspace.getConfiguration('antigravityQuota');
+        const endpoint = config.get('sync.endpoint', '').trim();
+        if (!endpoint) {
+          await configSyncInteractive();
+        } else {
+          await triggerRemoteSync(false);
+        }
       }
     });
 
@@ -643,6 +666,16 @@ async function showQuickPickMenu() {
     description: '重新探测官方语言服务配额与 SQLite 数据库',
     action: 'refresh',
   });
+  items.push({
+    label: '$(cloud-upload) 立即同步 Token 数据到远程服务器',
+    description: '将本地持久化热力图与消耗统计推送到后端',
+    action: 'sync_remote',
+  });
+  items.push({
+    label: '$(gear) 配置云端同步 (接口地址与密钥)',
+    description: '设置或修改 NestJS 同步接口 URL、鉴权秘钥与脱敏模式',
+    action: 'config_sync',
+  });
 
   const selected = await vscode.window.showQuickPick(items, {
     placeHolder: 'Antigravity 配额与 Token 用量详情',
@@ -673,6 +706,10 @@ async function showQuickPickMenu() {
     } else {
       vscode.window.showInformationMessage('归档文件尚未生成，请稍后刷新。');
     }
+  } else if (selected.action === 'sync_remote') {
+    await triggerRemoteSync(false);
+  } else if (selected.action === 'config_sync') {
+    await configSyncInteractive();
   }
 }
 
@@ -727,6 +764,154 @@ function copySummaryToClipboard() {
   vscode.window.showInformationMessage('Token 统计报告已复制到剪贴板！');
 }
 
+// ==================== Remote Cloud Sync ====================
+
+/**
+ * Pushes current token archive to the configured remote endpoint
+ * @param {boolean} [silent=false] If true, does not show progress or success notifications
+ * @returns {Promise<boolean>}
+ */
+async function triggerRemoteSync(silent = false) {
+  const config = vscode.workspace.getConfiguration('antigravityQuota');
+  const endpoint = config.get('sync.endpoint', '').trim();
+  const secretKey = config.get('sync.secretKey', '').trim();
+  const mode = config.get('sync.mode', 'full');
+
+  if (!endpoint) {
+    if (!silent) {
+      const action = await vscode.window.showWarningMessage(
+        '尚未配置云端同步接口地址。是否现在进行配置？',
+        '立即配置',
+        '取消'
+      );
+      if (action === '立即配置') {
+        await configSyncInteractive();
+      }
+    }
+    return false;
+  }
+
+  const storageDir = extensionContext?.globalStorageUri?.fsPath;
+  const archivePath = getArchivePath(storageDir);
+  const payload = exportDataForSync(archivePath, mode);
+
+  const doSync = async () => {
+    const res = await pushTokenStatsToRemote(endpoint, secretKey, payload);
+    if (res.success) {
+      lastRemoteSyncTime = Date.now();
+      if (!silent) {
+        const daysCount = payload.all_daily?.length || 0;
+        const totalTokens = payload.summary?.all_time_tokens || 0;
+        vscode.window.showInformationMessage(
+          `Token 数据已成功同步到远程服务器！(共 ${daysCount} 天热力图，累计 ${formatChinese(totalTokens)} tokens)`
+        );
+      }
+      return true;
+    } else {
+      if (!silent) {
+        vscode.window.showErrorMessage(`云端同步失败: ${res.error}`);
+      } else {
+        console.warn('[Antigravity Quota] Remote sync error:', res.error);
+      }
+      return false;
+    }
+  };
+
+  if (!silent) {
+    return await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: '正在同步 Token 统计数据到远程服务器...',
+      },
+      doSync
+    );
+  } else {
+    return await doSync();
+  }
+}
+
+/**
+ * Interactive wizard to configure remote sync settings
+ */
+async function configSyncInteractive() {
+  const config = vscode.workspace.getConfiguration('antigravityQuota');
+  const currentEndpoint = config.get('sync.endpoint', '');
+  const currentSecret = config.get('sync.secretKey', '');
+
+  // Step 1: Input Endpoint URL
+  const endpoint = await vscode.window.showInputBox({
+    title: '配置云端同步接口地址 (Step 1/3)',
+    prompt: '请输入服务端同步接口完整地址 (例如: http://localhost:9527/token-stats/sync 或 https://your-domain.com/token-stats/sync)',
+    value: currentEndpoint || 'http://localhost:9527/token-stats/sync',
+    ignoreFocusOut: true,
+    validateInput: (val) => {
+      if (!val || !val.trim()) return '接口地址不能为空';
+      if (!val.startsWith('http://') && !val.startsWith('https://')) {
+        return '接口地址必须以 http:// 或 https:// 开头';
+      }
+      return null;
+    },
+  });
+  if (endpoint === undefined) return;
+
+  // Step 2: Input Secret Key
+  const secretKey = await vscode.window.showInputBox({
+    title: '配置同步鉴权密钥 (Step 2/3)',
+    prompt: '请输入服务端的同步鉴权密钥 (与 NestJS 后端的 TOKEN_SYNC_SECRET 保持一致，留空表示无鉴权)',
+    value: currentSecret,
+    password: true,
+    ignoreFocusOut: true,
+  });
+  if (secretKey === undefined) return;
+
+  // Step 3: Choose Privacy Mode
+  const modePick = await vscode.window.showQuickPick(
+    [
+      {
+        label: '$(pass-filled) 完整模式 (full)',
+        description: '推荐个人私有部署',
+        detail: '完整同步每日热力图、总消耗及各历史项目名称明细',
+        value: 'full',
+      },
+      {
+        label: '$(lock) 脱敏模式 (anonymized)',
+        description: '保护项目隐私',
+        detail: '自动将项目名称转换为 Project 1、Project 2 等无敏感名称',
+        value: 'anonymized',
+      },
+      {
+        label: '$(shield) 纯热力图模式 (public)',
+        description: '仅用于公开博客热力图',
+        detail: '仅同步全量每日热力图与总消耗，完全不上传任何项目名',
+        value: 'public',
+      },
+    ],
+    {
+      title: '选择数据同步模式 (Step 3/3)',
+      placeHolder: '选择要推送到服务器的数据隐私模式',
+      ignoreFocusOut: true,
+    }
+  );
+  if (!modePick) return;
+
+  // Save configuration to Global user settings
+  await config.update('sync.endpoint', endpoint.trim(), vscode.ConfigurationTarget.Global);
+  await config.update('sync.secretKey', secretKey.trim(), vscode.ConfigurationTarget.Global);
+  await config.update('sync.mode', modePick.value, vscode.ConfigurationTarget.Global);
+  await config.update('sync.enabled', true, vscode.ConfigurationTarget.Global);
+
+  // Offer immediate test sync
+  const testChoice = await vscode.window.showInformationMessage(
+    '云端同步配置已保存并已启用！是否立即测试连接并推送一次数据？',
+    '立即测试同步',
+    '稍后自动同步'
+  );
+
+  if (testChoice === '立即测试同步') {
+    await triggerRemoteSync(false);
+  }
+}
+
 // ==================== Activation & Deactivation ====================
 
 function activate(context) {
@@ -762,6 +947,12 @@ function activate(context) {
     }),
     vscode.commands.registerCommand('antigravity-quota.copyReport', () => {
       copySummaryToClipboard();
+    }),
+    vscode.commands.registerCommand('antigravity-quota.syncRemote', async () => {
+      await triggerRemoteSync(false);
+    }),
+    vscode.commands.registerCommand('antigravity-quota.configSync', async () => {
+      await configSyncInteractive();
     })
   );
 
