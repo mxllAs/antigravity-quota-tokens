@@ -3,6 +3,18 @@
 本文档记录 **Antigravity Quota & Token Monitor** 扩展的所有重要版本更新。  
 本格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，并遵循 [语义化版本规范 (SemVer)](https://semver.org/lang/zh-CN/)。
 
+## [1.3.1] - 2026-10-15
+
+### ✨ 优化与多平台协同 (Enhancements & Multi-Platform)
+* **固化数据来源平台标识 (`source: "gemini"`)**：
+  * 同步 Payload 中固定声明 `source: "gemini"`，不可篡改，明确标识反重力 IDE / Gemini 渠道。
+  * 完美适配服务端的多平台 Token 聚合大盘，支持与 Cursor、Claude 等平台独立区分与一键全局汇总。
+* **配置向导与验证机制强化**：
+  * 引入保存前服务端握手鉴权校验，输入错误密钥时当场拦截报错，避免假保存。
+  * 移除密码框歧义遮罩并新增单项管理菜单（支持单独测通、修改密钥、修改地址）。
+
+---
+
 ## [1.3.0] - 2026-10-15
 
 ### ✨ 重大新增 (Features)
