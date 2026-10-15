@@ -831,9 +831,227 @@ async function triggerRemoteSync(silent = false) {
 }
 
 /**
- * Interactive wizard to configure remote sync settings
+ * Interactive menu & wizard to configure remote sync settings
  */
 async function configSyncInteractive() {
+  const config = vscode.workspace.getConfiguration('antigravityQuota');
+  const currentEndpoint = config.get('sync.endpoint', '').trim();
+  const currentSecret = config.get('sync.secretKey', '').trim();
+  const currentMode = config.get('sync.mode', 'full');
+
+  // If already configured, provide quick management actions
+  if (currentEndpoint) {
+    const keyHint = currentSecret ? `...${currentSecret.slice(-6)}` : '未设置';
+    const choice = await vscode.window.showQuickPick(
+      [
+        {
+          label: '$(pass) 测试当前云端连接 (验证接口与密钥)',
+          description: `验证 ${currentEndpoint}`,
+          action: 'test',
+        },
+        {
+          label: '$(key) 修改同步鉴权密钥 (Secret Key)',
+          description: `当前密钥: ${keyHint}`,
+          action: 'edit_key',
+        },
+        {
+          label: '$(link) 修改同步接口地址 (Endpoint URL)',
+          description: `当前地址: ${currentEndpoint}`,
+          action: 'edit_url',
+        },
+        {
+          label: '$(shield) 修改数据隐私模式 (Privacy Mode)',
+          description: `当前模式: ${currentMode}`,
+          action: 'edit_mode',
+        },
+        {
+          label: '$(gear) 重新运行完整配置向导 (3步逐步配置)',
+          description: '从头逐步配置接口地址、密钥与隐私模式',
+          action: 'wizard',
+        },
+      ],
+      {
+        title: '云端同步配置管理',
+        placeHolder: '选择要执行的操作',
+        ignoreFocusOut: true,
+      }
+    );
+
+    if (!choice) return;
+
+    if (choice.action === 'test') {
+      await triggerRemoteSync(false);
+      return;
+    } else if (choice.action === 'edit_key') {
+      await quickEditSecretKey();
+      return;
+    } else if (choice.action === 'edit_url') {
+      await quickEditEndpoint();
+      return;
+    } else if (choice.action === 'edit_mode') {
+      await quickEditMode();
+      return;
+    }
+    // choice.action === 'wizard' -> proceed to runSetupWizard() below
+  }
+
+  await runSetupWizard();
+}
+
+/**
+ * Quick edit secret key with pre-save server validation
+ */
+async function quickEditSecretKey() {
+  const config = vscode.workspace.getConfiguration('antigravityQuota');
+  const currentEndpoint = config.get('sync.endpoint', '').trim();
+  const currentSecret = config.get('sync.secretKey', '').trim();
+  const currentMode = config.get('sync.mode', 'full');
+
+  const keyHint = currentSecret ? `(当前密钥后6位: ...${currentSecret.slice(-6)})` : '';
+  const newSecret = await vscode.window.showInputBox({
+    title: '修改同步鉴权密钥',
+    prompt: `请输入新的服务端 TOKEN_SYNC_SECRET ${keyHint}`,
+    password: true,
+    ignoreFocusOut: true,
+  });
+
+  if (newSecret === undefined) return;
+  if (!newSecret.trim()) {
+    vscode.window.showWarningMessage('密钥未修改。');
+    return;
+  }
+
+  const cleanKey = newSecret.trim();
+
+  // Validate with server BEFORE saving!
+  const res = await vscode.window.withProgress(
+    { location: vscode.ProgressLocation.Notification, title: '正在向服务端验证新密钥...' },
+    async () => {
+      const storageDir = extensionContext?.globalStorageUri?.fsPath;
+      const archivePath = getArchivePath(storageDir);
+      const payload = exportDataForSync(archivePath, currentMode);
+      return await pushTokenStatsToRemote(currentEndpoint, cleanKey, payload, 8000);
+    }
+  );
+
+  if (res.success) {
+    await config.update('sync.secretKey', cleanKey, vscode.ConfigurationTarget.Global);
+    await config.update('sync.enabled', true, vscode.ConfigurationTarget.Global);
+    lastRemoteSyncTime = Date.now();
+    vscode.window.showInformationMessage('✅ 新密钥验证通过并已成功保存！');
+  } else {
+    const action = await vscode.window.showErrorMessage(
+      `❌ 密钥验证失败: ${res.error}。服务端拒绝了该密钥，未进行保存。`,
+      '重试',
+      '强制保存',
+      '取消'
+    );
+    if (action === '重试') {
+      await quickEditSecretKey();
+    } else if (action === '强制保存') {
+      await config.update('sync.secretKey', cleanKey, vscode.ConfigurationTarget.Global);
+      vscode.window.showWarningMessage('已强制保存密钥，但当前密钥无法通过服务端鉴权，请核对。');
+    }
+  }
+}
+
+/**
+ * Quick edit endpoint with pre-save server validation
+ */
+async function quickEditEndpoint() {
+  const config = vscode.workspace.getConfiguration('antigravityQuota');
+  const currentEndpoint = config.get('sync.endpoint', '').trim();
+  const currentSecret = config.get('sync.secretKey', '').trim();
+  const currentMode = config.get('sync.mode', 'full');
+
+  const newEndpoint = await vscode.window.showInputBox({
+    title: '修改同步接口地址',
+    prompt: '请输入服务端同步接口完整地址 (例如: https://your-domain.com/token-stats/sync)',
+    value: currentEndpoint || 'http://localhost:9527/token-stats/sync',
+    ignoreFocusOut: true,
+    validateInput: (val) => {
+      if (!val || !val.trim()) return '接口地址不能为空';
+      if (!val.startsWith('http://') && !val.startsWith('https://')) {
+        return '接口地址必须以 http:// 或 https:// 开头';
+      }
+      return null;
+    },
+  });
+
+  if (newEndpoint === undefined) return;
+
+  const res = await vscode.window.withProgress(
+    { location: vscode.ProgressLocation.Notification, title: '正在连接测试新接口地址...' },
+    async () => {
+      const storageDir = extensionContext?.globalStorageUri?.fsPath;
+      const archivePath = getArchivePath(storageDir);
+      const payload = exportDataForSync(archivePath, currentMode);
+      return await pushTokenStatsToRemote(newEndpoint.trim(), currentSecret, payload, 8000);
+    }
+  );
+
+  if (res.success) {
+    await config.update('sync.endpoint', newEndpoint.trim(), vscode.ConfigurationTarget.Global);
+    lastRemoteSyncTime = Date.now();
+    vscode.window.showInformationMessage('✅ 接口地址测试成功并已保存！');
+  } else {
+    const action = await vscode.window.showErrorMessage(
+      `❌ 接口测试失败: ${res.error}`,
+      '重试',
+      '强制保存',
+      '取消'
+    );
+    if (action === '重试') {
+      await quickEditEndpoint();
+    } else if (action === '强制保存') {
+      await config.update('sync.endpoint', newEndpoint.trim(), vscode.ConfigurationTarget.Global);
+      vscode.window.showWarningMessage('已强制保存接口地址。');
+    }
+  }
+}
+
+/**
+ * Quick edit privacy mode
+ */
+async function quickEditMode() {
+  const config = vscode.workspace.getConfiguration('antigravityQuota');
+  const modePick = await vscode.window.showQuickPick(
+    [
+      {
+        label: '$(pass-filled) 完整模式 (full)',
+        description: '推荐个人私有部署',
+        detail: '完整同步每日热力图、总消耗及各历史项目名称明细',
+        value: 'full',
+      },
+      {
+        label: '$(lock) 脱敏模式 (anonymized)',
+        description: '保护项目隐私',
+        detail: '自动将项目名称转换为 Project 1、Project 2 等无敏感名称',
+        value: 'anonymized',
+      },
+      {
+        label: '$(shield) 纯热力图模式 (public)',
+        description: '仅用于公开博客热力图',
+        detail: '仅同步全量每日热力图与总消耗，完全不上传任何项目名',
+        value: 'public',
+      },
+    ],
+    {
+      title: '修改数据同步模式',
+      placeHolder: '选择要推送到服务器的数据隐私模式',
+      ignoreFocusOut: true,
+    }
+  );
+
+  if (!modePick) return;
+  await config.update('sync.mode', modePick.value, vscode.ConfigurationTarget.Global);
+  vscode.window.showInformationMessage(`已切换为【${modePick.label}】！`);
+}
+
+/**
+ * Step-by-step setup wizard with pre-save validation
+ */
+async function runSetupWizard() {
   const config = vscode.workspace.getConfiguration('antigravityQuota');
   const currentEndpoint = config.get('sync.endpoint', '');
   const currentSecret = config.get('sync.secretKey', '');
@@ -854,15 +1072,19 @@ async function configSyncInteractive() {
   });
   if (endpoint === undefined) return;
 
-  // Step 2: Input Secret Key
-  const secretKey = await vscode.window.showInputBox({
+  // Step 2: Input Secret Key (clear hint, empty input so user can press Enter to keep)
+  const secretPrompt = currentSecret
+    ? `当前密钥: ...${currentSecret.slice(-6)} (已配置)。输入新密钥替换，直接按 Enter 保留原密钥:`
+    : '请输入服务端的同步鉴权密钥 (与 NestJS 后端的 TOKEN_SYNC_SECRET 保持一致)';
+  const inputSecret = await vscode.window.showInputBox({
     title: '配置同步鉴权密钥 (Step 2/3)',
-    prompt: '请输入服务端的同步鉴权密钥 (与 NestJS 后端的 TOKEN_SYNC_SECRET 保持一致，留空表示无鉴权)',
-    value: currentSecret,
+    prompt: secretPrompt,
+    value: '', // leave empty to avoid confusing masked dots
     password: true,
     ignoreFocusOut: true,
   });
-  if (secretKey === undefined) return;
+  if (inputSecret === undefined) return;
+  const finalSecret = inputSecret.trim() ? inputSecret.trim() : currentSecret;
 
   // Step 3: Choose Privacy Mode
   const modePick = await vscode.window.showQuickPick(
@@ -894,21 +1116,43 @@ async function configSyncInteractive() {
   );
   if (!modePick) return;
 
-  // Save configuration to Global user settings
-  await config.update('sync.endpoint', endpoint.trim(), vscode.ConfigurationTarget.Global);
-  await config.update('sync.secretKey', secretKey.trim(), vscode.ConfigurationTarget.Global);
-  await config.update('sync.mode', modePick.value, vscode.ConfigurationTarget.Global);
-  await config.update('sync.enabled', true, vscode.ConfigurationTarget.Global);
-
-  // Offer immediate test sync
-  const testChoice = await vscode.window.showInformationMessage(
-    '云端同步配置已保存并已启用！是否立即测试连接并推送一次数据？',
-    '立即测试同步',
-    '稍后自动同步'
+  // Pre-save connection and key verification
+  const res = await vscode.window.withProgress(
+    {
+      location: vscode.ProgressLocation.Notification,
+      title: '正在向服务端验证接口地址与密钥有效性...',
+    },
+    async () => {
+      const storageDir = extensionContext?.globalStorageUri?.fsPath;
+      const archivePath = getArchivePath(storageDir);
+      const payload = exportDataForSync(archivePath, modePick.value);
+      return await pushTokenStatsToRemote(endpoint.trim(), finalSecret, payload, 8000);
+    }
   );
 
-  if (testChoice === '立即测试同步') {
-    await triggerRemoteSync(false);
+  if (res.success) {
+    await config.update('sync.endpoint', endpoint.trim(), vscode.ConfigurationTarget.Global);
+    await config.update('sync.secretKey', finalSecret, vscode.ConfigurationTarget.Global);
+    await config.update('sync.mode', modePick.value, vscode.ConfigurationTarget.Global);
+    await config.update('sync.enabled', true, vscode.ConfigurationTarget.Global);
+    lastRemoteSyncTime = Date.now();
+    vscode.window.showInformationMessage('✅ 云端同步配置成功！接口与密钥已验证有效，数据已成功同步至服务器。');
+  } else {
+    const action = await vscode.window.showErrorMessage(
+      `❌ 云端校验失败: ${res.error}。密钥或接口未通过验证，配置未保存。`,
+      '重新配置',
+      '强制保存',
+      '取消'
+    );
+    if (action === '重新配置') {
+      await runSetupWizard();
+    } else if (action === '强制保存') {
+      await config.update('sync.endpoint', endpoint.trim(), vscode.ConfigurationTarget.Global);
+      await config.update('sync.secretKey', finalSecret, vscode.ConfigurationTarget.Global);
+      await config.update('sync.mode', modePick.value, vscode.ConfigurationTarget.Global);
+      await config.update('sync.enabled', true, vscode.ConfigurationTarget.Global);
+      vscode.window.showWarningMessage('已强制保存配置，但当前密钥无法通过鉴权，请检查服务端。');
+    }
   }
 }
 
