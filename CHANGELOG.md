@@ -3,6 +3,22 @@
 本文档记录 **Antigravity Quota & Token Monitor** 扩展的所有重要版本更新。  
 本格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，并遵循 [语义化版本规范 (SemVer)](https://semver.org/lang/zh-CN/)。
 
+## [1.3.0] - 2026-10-15
+
+### ✨ 重大新增 (Features)
+* **远程云端/服务器自动同步 (Remote Token Stats Synchronization)**：
+  * 新增 `src/sync_client.js` 同步引擎，支持将本地持久化热力图与统计快照实时推送到自建 NestJS/HTTP 后端服务器。
+  * 完美适配后端鉴权保护，自动发送 `x-sync-secret` 与 `Authorization: Bearer` 双鉴权请求头。
+  * 支持 3 种数据隐私模式：完整模式 (`full`，含项目明细)、脱敏模式 (`anonymized`，项目名自动匿名化)、纯热力图模式 (`public`，仅保留天级图表数据)。
+  * 支持后台定时自动同步（可配置周期，默认 10 分钟）与静默后台容错。
+* **交互式配置向导与快捷入口 (Interactive Config Wizard & UI Actions)**：
+  * 新增快捷命令 `antigravity-quota.configSync`，分步引导输入服务端接口地址、密钥并选择模式，保存后可一键测试连接。
+  * 侧边栏大盘顶部新增 **`☁️ 同步`** 快捷按钮（未配置时自动引导向导，已配置后一键立即推送）。
+  * 底部状态栏菜单新增「立即同步 Token 数据」与「配置云端同步 (接口地址与密钥)」。
+  * 完善 VS Code 全局设置项 `antigravityQuota.sync.*`，密钥与接口严格保存在本地全局用户配置，避免意外提交到代码仓库。
+
+---
+
 ## [1.2.0] - 2026-10-14
 
 ### ✨ 重大新增 (Features)
