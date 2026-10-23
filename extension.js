@@ -255,13 +255,22 @@ function renderStatusBar() {
       parts.push(`${emoji} Gemini ${fiveH.remaining_pct}%${timeStr}`);
     }
 
-    if (showClaude && lastQuotaData.claude) {
+    if (lastQuotaData.has_claude && showClaude && lastQuotaData.claude) {
       const c = lastQuotaData.claude;
       const fiveH = c.five_hour || c;
       const emoji = getStatusEmoji(fiveH.remaining_pct);
       const countdown = formatCountdown(fiveH.reset_time);
       const timeStr = countdown ? ` (${countdown})` : '';
       parts.push(`${emoji} Claude/GPT ${fiveH.remaining_pct}%${timeStr}`);
+    }
+
+    if (lastQuotaData.gemini4 && lastQuotaData.gemini4.weekly) {
+      const g4 = lastQuotaData.gemini4;
+      const weekly = g4.weekly;
+      const emoji = getStatusEmoji(weekly.remaining_pct);
+      const countdown = formatCountdown(weekly.reset_time);
+      const timeStr = countdown ? ` (${countdown})` : '';
+      parts.push(`${emoji} Gemini4 ${weekly.remaining_pct}%${timeStr}`);
     }
   }
 
@@ -309,16 +318,25 @@ function renderStatusBar() {
         const cd5 = formatCountdown(fiveH.reset_time);
         const cdw = weekly ? formatCountdown(weekly.reset_time) : '-';
         const wStr = weekly ? `${weekly.remaining_pct}% (${cdw})` : '-';
-        md.appendMarkdown(`| ${getStatusEmoji(fiveH.remaining_pct)} **Gemini 额度池** | **${fiveH.remaining_pct}%** (${cd5 || '-'}) | ${wStr} | **1M (100万)** |\n`);
+        md.appendMarkdown(`| ${getStatusEmoji(fiveH.remaining_pct)} **Gemini 额度池** | **${fiveH.remaining_pct}%** (${cd5 || '-'}) | ${wStr} | **1M (104.8万)** |\n`);
       }
-      if (lastQuotaData.claude) {
+      if (lastQuotaData.gemini4) {
+        const g4 = lastQuotaData.gemini4;
+        const weekly = g4.weekly;
+        const cdw = weekly ? formatCountdown(weekly.reset_time) : '-';
+        const wStr = weekly ? `${weekly.remaining_pct}% (${cdw})` : '-';
+        md.appendMarkdown(`| ${getStatusEmoji(weekly ? weekly.remaining_pct : 100)} **Gemini 4 Argon** | **独立周额度** | ${wStr} | **1M (104.8万)** |\n`);
+      }
+      if (lastQuotaData.has_claude && lastQuotaData.claude) {
         const c = lastQuotaData.claude;
         const fiveH = c.five_hour || c;
         const weekly = c.weekly;
         const cd5 = formatCountdown(fiveH.reset_time);
         const cdw = weekly ? formatCountdown(weekly.reset_time) : '-';
         const wStr = weekly ? `${weekly.remaining_pct}% (${cdw})` : '-';
-        md.appendMarkdown(`| ${getStatusEmoji(fiveH.remaining_pct)} **Claude & GPT 额度池** | **${fiveH.remaining_pct}%** (${cd5 || '-'}) | ${wStr} | **200k (20万) · GPT 128k** |\n`);
+        md.appendMarkdown(`| ${getStatusEmoji(fiveH.remaining_pct)} **Claude & GPT 额度池** | **${fiveH.remaining_pct}%** (${cd5 || '-'}) | ${wStr} | **1M (Claude 5.5) · GPT 128k** |\n`);
+      } else if (lastQuotaData.has_claude === false) {
+        md.appendMarkdown(`| ⚪ **Claude & GPT 额度池** | **未开通** | - | **活动版 Pro 专享 Gemini** |\n`);
       }
       if (lastQuotaData.user_name || lastQuotaData.user_email) {
         md.appendMarkdown('\n---\n');
@@ -364,16 +382,25 @@ function renderStatusBar() {
         const cd5 = formatCountdown(fiveH.reset_time);
         const cdw = weekly ? formatCountdown(weekly.reset_time) : '-';
         const wStr = weekly ? `${weekly.remaining_pct}% (${cdw})` : '-';
-        md.appendMarkdown(`| ${getStatusEmoji(fiveH.remaining_pct)} **Gemini Pool** | **${fiveH.remaining_pct}%** (${cd5 || '-'}) | ${wStr} | **1M (1,000,000)** |\n`);
+        md.appendMarkdown(`| ${getStatusEmoji(fiveH.remaining_pct)} **Gemini Pool** | **${fiveH.remaining_pct}%** (${cd5 || '-'}) | ${wStr} | **1M (1,048,576)** |\n`);
       }
-      if (lastQuotaData.claude) {
+      if (lastQuotaData.gemini4) {
+        const g4 = lastQuotaData.gemini4;
+        const weekly = g4.weekly;
+        const cdw = weekly ? formatCountdown(weekly.reset_time) : '-';
+        const wStr = weekly ? `${weekly.remaining_pct}% (${cdw})` : '-';
+        md.appendMarkdown(`| ${getStatusEmoji(weekly ? weekly.remaining_pct : 100)} **Gemini 4 Argon** | **Weekly Limit** | ${wStr} | **1M (1,048,576)** |\n`);
+      }
+      if (lastQuotaData.has_claude && lastQuotaData.claude) {
         const c = lastQuotaData.claude;
         const fiveH = c.five_hour || c;
         const weekly = c.weekly;
         const cd5 = formatCountdown(fiveH.reset_time);
         const cdw = weekly ? formatCountdown(weekly.reset_time) : '-';
         const wStr = weekly ? `${weekly.remaining_pct}% (${cdw})` : '-';
-        md.appendMarkdown(`| ${getStatusEmoji(fiveH.remaining_pct)} **Claude & GPT Pool** | **${fiveH.remaining_pct}%** (${cd5 || '-'}) | ${wStr} | **200k · GPT 128k** |\n`);
+        md.appendMarkdown(`| ${getStatusEmoji(fiveH.remaining_pct)} **Claude & GPT Pool** | **${fiveH.remaining_pct}%** (${cd5 || '-'}) | ${wStr} | **1M (Claude 5.5) · GPT 128k** |\n`);
+      } else if (lastQuotaData.has_claude === false) {
+        md.appendMarkdown(`| ⚪ **Claude & GPT Pool** | **No Access** | - | **Promo Pro (Gemini Only)** |\n`);
       }
       if (lastQuotaData.user_name || lastQuotaData.user_email) {
         md.appendMarkdown('\n---\n');
@@ -615,6 +642,13 @@ async function showQuickPickMenu() {
       label: '⚡ 官方模型额度池 (5小时 & 周额度)',
       kind: vscode.QuickPickItemKind.Separator,
     });
+    if (lastQuotaData.user_name || lastQuotaData.user_email) {
+      items.push({
+        label: `$(account) 当前账号: ${lastQuotaData.user_name || 'User'} (${lastQuotaData.user_email || 'Local'})`,
+        description: lastQuotaData.tier_name || 'Google AI',
+        detail: lastQuotaData.has_claude ? '已开通 Claude 5.5 / GPT 访问权限' : '活动版 Pro (Gemini 专享，无 Claude 额度)',
+      });
+    }
     if (lastQuotaData.gemini) {
       const g = lastQuotaData.gemini;
       const fiveH = g.five_hour || g;
@@ -627,7 +661,17 @@ async function showQuickPickMenu() {
         detail: weekly ? `📅 周额度健康度: 剩余 ${weekly.remaining_pct}% (⏱ 周重置: ${cdw}) · Gemini 全系列共享` : 'Gemini 全系列共享',
       });
     }
-    if (lastQuotaData.claude) {
+    if (lastQuotaData.gemini4 && lastQuotaData.gemini4.weekly) {
+      const g4 = lastQuotaData.gemini4;
+      const weekly = g4.weekly;
+      const cdw = formatCountdown(weekly.reset_time);
+      items.push({
+        label: `${getStatusEmoji(weekly.remaining_pct)} Gemini 4 Argon 周额度: ${weekly.remaining_pct}% (已用 ${weekly.used_pct}%)`,
+        description: cdw ? `⏱ 周重置: ${cdw}` : '',
+        detail: 'Gemini 4 Argon 独立周额度 · 原生 1M 上下文',
+      });
+    }
+    if (lastQuotaData.has_claude && lastQuotaData.claude) {
       const c = lastQuotaData.claude;
       const fiveH = c.five_hour || c;
       const weekly = c.weekly;
@@ -636,7 +680,13 @@ async function showQuickPickMenu() {
       items.push({
         label: `${getStatusEmoji(fiveH.remaining_pct)} Claude/GPT 5小时额度: ${fiveH.remaining_pct}% (已用 ${fiveH.used_pct}%)`,
         description: cd5 ? `⏱ 5h重置: ${cd5}` : '',
-        detail: weekly ? `📅 周额度健康度: 剩余 ${weekly.remaining_pct}% (⏱ 周重置: ${cdw}) · Claude/GPT 共享` : 'Claude 4.6 · GPT 共享',
+        detail: weekly ? `📅 周额度健康度: 剩余 ${weekly.remaining_pct}% (⏱ 周重置: ${cdw}) · Claude/GPT 共享` : 'Claude 5.5 · GPT 共享',
+      });
+    } else if (lastQuotaData.has_claude === false) {
+      items.push({
+        label: `$(lock) Claude & GPT 额度: 未开通 (活动版 Pro 专享 Gemini)`,
+        description: '仅限付费 Pro / Ultra 用户',
+        detail: '当前账号为活动领取的 Google AI Pro，官方未分配 3P/Claude 模型额度',
       });
     }
   }

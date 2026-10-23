@@ -72,6 +72,27 @@
     </div>
   </div>
 
+  <!-- Gemini 4 Argon Pool Card (Dynamically displayed when available) -->
+  <div class="card" id="cardGemini4" style="display: none;">
+    <div class="quota-header">
+      <div class="quota-name">
+        <span class="dot dot-green" id="gemini4Dot"></span>
+        <span id="lblGemini4Pool">Gemini 4 Argon 额度池</span>
+      </div>
+      <div class="quota-badge" id="gemini4Pct">--%</div>
+    </div>
+    <div class="quota-models-hint" id="gemini4ModelsHint">
+      Gemini 4 独立周额度 · 1M 超长上下文
+    </div>
+    <div class="progress-bar-bg">
+      <div class="progress-bar-fill fill-gemini4" id="gemini4Bar" style="width: 0%;"></div>
+    </div>
+    <div class="quota-footer">
+      <span id="gemini4Used">周消耗: --%</span>
+      <span id="gemini4Reset">⏱ 周重置: --</span>
+    </div>
+  </div>
+
   <!-- Claude & GPT Pool Card -->
   <div class="card" id="cardClaude">
     <div class="quota-header">
@@ -82,7 +103,7 @@
       <div class="quota-badge" id="claudePct">--%</div>
     </div>
     <div class="quota-models-hint" id="claudeModelsHint">
-      Claude 200k 上下文 · GPT-OSS 128k 上下文
+      Claude 5.5 (1M 上下文) · GPT-OSS 128k 上下文
     </div>
     <div class="progress-bar-bg">
       <div class="progress-bar-fill fill-claude" id="claudeBar" style="width: 0%;"></div>

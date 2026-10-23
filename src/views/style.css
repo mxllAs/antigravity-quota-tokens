@@ -17,6 +17,7 @@
       --cache-text: #c084fc;
       --cache-border: rgba(168, 85, 247, 0.3);
       --gemini-grad: linear-gradient(90deg, #10b981, #06b6d4);
+      --gemini4-grad: linear-gradient(90deg, #0ea5e9, #6366f1);
       --claude-grad: linear-gradient(90deg, #8b5cf6, #ec4899);
       --input-color: #3b82f6;
       --cache-color: #a855f7;
@@ -304,6 +305,7 @@
     .dot-green { background: #10b981; box-shadow: 0 0 6px #10b981aa; }
     .dot-yellow { background: #f59e0b; box-shadow: 0 0 6px #f59e0baa; }
     .dot-red { background: #ef4444; box-shadow: 0 0 6px #ef4444aa; }
+    .dot-gray { background: #6b7280; box-shadow: none; }
 
     .quota-badge {
       font-size: 13.5px;
@@ -334,7 +336,13 @@
     }
 
     .fill-gemini { background: var(--gemini-grad); }
+    .fill-gemini4 { background: var(--gemini4-grad); }
     .fill-claude { background: var(--claude-grad); }
+
+    .card-disabled {
+      opacity: 0.72;
+      border-style: dashed;
+    }
 
     .quota-footer {
       display: flex;

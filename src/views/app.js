@@ -28,8 +28,13 @@ const I18N = {
     secQuotas: '官方实时模型配额',
     geminiPool: 'Gemini 额度池',
     geminiHint: '原生支持 1M 超长上下文 (104.8 万 tokens)',
+    gemini4Pool: 'Gemini 4 Argon 额度池',
+    gemini4Hint: 'Gemini 4 独立周额度 · 1M 超长上下文',
     claudePool: 'Claude & GPT 额度池',
-    claudeHint: 'Claude 200k 上下文 · GPT-OSS 128k 上下文',
+    claudeHint: 'Claude 5.5 (1M 上下文) · GPT-OSS 128k 上下文',
+    claudeNoAccess: '未开通 3P 权限 (活动版 Pro 专享 Gemini)',
+    claudeNoAccessHint: '活动领取的 Pro 账号官方未分配 Claude 额度',
+    noAccessTag: '未开通',
     fiveHUsed: '5h消耗: ',
     resetPrefix: '⏱ 重置: ',
     weeklyHealth: '📅 周额度健康度',
@@ -89,8 +94,13 @@ const I18N = {
     secQuotas: 'Official Real-time Quotas',
     geminiPool: 'Gemini Pool',
     geminiHint: 'Native 1M long context (1,048,576 tokens)',
+    gemini4Pool: 'Gemini 4 Argon Pool',
+    gemini4Hint: 'Gemini 4 Weekly Limit · 1M Context',
     claudePool: 'Claude & GPT Pool',
-    claudeHint: 'Claude 200k context · GPT-OSS 128k context',
+    claudeHint: 'Claude 5.5 (1M context) · GPT-OSS 128k context',
+    claudeNoAccess: 'No 3P Access (Promo Pro: Gemini Only)',
+    claudeNoAccessHint: 'Promotional Pro account without Claude quota allocation',
+    noAccessTag: 'No Access',
     fiveHUsed: '5h Used: ',
     resetPrefix: '⏱ Resets: ',
     weeklyHealth: '📅 Weekly Quota Health',
@@ -211,6 +221,13 @@ function applyI18n() {
   document.getElementById('lblGeminiPool').innerText = t.geminiPool;
   document.getElementById('geminiModelsHint').innerText = t.geminiHint;
   document.getElementById('lblGeminiWeekly').innerText = t.weeklyHealth;
+
+  const lblG4 = document.getElementById('lblGemini4Pool');
+  if (lblG4) {
+    lblG4.innerText = t.gemini4Pool;
+    const g4Hint = document.getElementById('gemini4ModelsHint');
+    if (g4Hint) g4Hint.innerText = t.gemini4Hint;
+  }
 
   document.getElementById('lblClaudePool').innerText = t.claudePool;
   document.getElementById('claudeModelsHint').innerText = t.claudeHint;
@@ -351,11 +368,57 @@ function renderData(quota, tokens) {
         wRow.style.display = 'none';
       }
     }
-    if (quota.claude) {
+    // Gemini 4 Argon Pool (Desktop/New version)
+    const cardG4 = document.getElementById('cardGemini4');
+    if (cardG4) {
+      if (quota.gemini4 && quota.gemini4.weekly) {
+        cardG4.style.display = 'block';
+        const g4 = quota.gemini4;
+        const weekly = g4.weekly;
+        document.getElementById('gemini4Pct').innerText = weekly.remaining_pct + '%';
+        document.getElementById('gemini4Bar').style.width = weekly.remaining_pct + '%';
+        document.getElementById('gemini4Used').innerText = (currentLang === 'en' ? 'Weekly Used: ' : '周额度消耗: ') + weekly.used_pct + '%';
+        const cd = formatCountdown(weekly.reset_time);
+        document.getElementById('gemini4Reset').innerText = cd ? t.resetPrefix + cd : '';
+        const dot = document.getElementById('gemini4Dot');
+        if (dot) {
+          dot.className =
+            'dot ' +
+            (weekly.remaining_pct > 50
+              ? 'dot-green'
+              : weekly.remaining_pct > 20
+                ? 'dot-yellow'
+                : 'dot-red');
+        }
+      } else {
+        cardG4.style.display = 'none';
+      }
+    }
+
+    // Claude Pool
+    const cardClaude = document.getElementById('cardClaude');
+    if (quota.has_claude === false) {
+      if (cardClaude) cardClaude.classList.add('card-disabled');
+      document.getElementById('claudePct').innerText = t.noAccessTag;
+      document.getElementById('claudePct').style.color = '#9ca3af';
+      document.getElementById('claudeBar').style.width = '0%';
+      document.getElementById('claudeUsed').innerText = t.claudeNoAccess;
+      document.getElementById('claudeReset').innerText = '';
+      const dot = document.getElementById('claudeDot');
+      if (dot) dot.className = 'dot dot-gray';
+      const hint = document.getElementById('claudeModelsHint');
+      if (hint) hint.innerText = t.claudeNoAccessHint;
+      const wRow = document.getElementById('claudeWeeklyRow');
+      if (wRow) wRow.style.display = 'none';
+    } else if (quota.claude) {
+      if (cardClaude) cardClaude.classList.remove('card-disabled');
+      const hint = document.getElementById('claudeModelsHint');
+      if (hint) hint.innerText = t.claudeHint;
       const c = quota.claude;
       const fiveH = c.five_hour || c;
       document.getElementById('claudePct').innerText =
         fiveH.remaining_pct + '%';
+      document.getElementById('claudePct').style.color = '';
       document.getElementById('claudeBar').style.width =
         fiveH.remaining_pct + '%';
       document.getElementById('claudeUsed').innerText =
@@ -366,13 +429,15 @@ function renderData(quota, tokens) {
         : '';
 
       const dot = document.getElementById('claudeDot');
-      dot.className =
-        'dot ' +
-        (fiveH.remaining_pct > 50
-          ? 'dot-green'
-          : fiveH.remaining_pct > 20
-            ? 'dot-yellow'
-            : 'dot-red');
+      if (dot) {
+        dot.className =
+          'dot ' +
+          (fiveH.remaining_pct > 50
+            ? 'dot-green'
+            : fiveH.remaining_pct > 20
+              ? 'dot-yellow'
+              : 'dot-red');
+      }
 
       const wRow = document.getElementById('claudeWeeklyRow');
       if (c.weekly) {

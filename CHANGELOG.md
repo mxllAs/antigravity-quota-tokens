@@ -3,6 +3,23 @@
 本文档记录 **Antigravity Quota & Token Monitor** 扩展的所有重要版本更新。  
 本格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，并遵循 [语义化版本规范 (SemVer)](https://semver.org/lang/zh-CN/)。
 
+## [1.4.0] - 2026-10-23
+
+### ✨ 重大新增 (Features)
+* **Gemini 4 Argon 独立周配额池支持 (Gemini 4 Argon Support)**：
+  * 完美适配 Antigravity 最新桌面端及服务端的 `Gemini 4 Argon` 架构。
+  * 独立周配额健康度监测：提取 `gemini-argon-wtu-weekly` 配额桶，在大盘中动态渲染专属靛青渐变卡片、周额度进度条与独立重置倒计时。
+  * 修复了以往任意包含 `gemini` 名称的分组会意外互相覆盖配额的逻辑缺陷。
+* **Google AI Pro 会员权限智能判定 (Pro Tier Identification)**：
+  * 精准区分活动领取版 Pro（无 3P/Claude 权限）与付费版 Pro（拥有完整 Claude 权限）。
+  * 针对活动版 Pro 用户，卡片友好展示 `未开通 3P 权限 (活动版 Pro 专享 Gemini)` 提示与弱化虚线面板，状态栏与悬浮窗同步显示专享标识，避免误报为 0% 或故障。
+* **Claude 5.5 全面升级与动态模型规格 (Claude 5.5 & 1M Context)**：
+  * 彻底移除旧版写死的 `Claude Opus 4.6` 与 `Claude Sonnet 4.6` 硬编码。
+  * 全面升级支持 `Claude Opus 5.5` 与 `Claude Sonnet 5.5`，原生上下文上限直接匹配官方最新规格 **`1,000,000 (1M)`**。
+  * 实时从 Antigravity 官方 LanguageServer 动态检索可用模型配置列表与各模型推荐用量。
+
+---
+
 ## [1.3.1] - 2026-10-15
 
 ### ✨ 优化与多平台协同 (Enhancements & Multi-Platform)

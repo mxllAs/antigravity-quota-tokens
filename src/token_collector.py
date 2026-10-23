@@ -140,19 +140,36 @@ def extract_session_title(cur):
 def normalize_model_specs(raw):
     raw_lower = (raw or '').lower().strip()
     if 'claude' in raw_lower:
-        if 'opus' in raw_lower:
-            return {
-                'id': 'claude-opus-4-6',
-                'name': 'Claude Opus 4.6',
-                'context_window': 200000,
-                'context_label': '200k'
-            }
+        is_opus = 'opus' in raw_lower
+        model_type = 'Opus' if is_opus else 'Sonnet'
+        model_id_prefix = 'claude-opus' if is_opus else 'claude-sonnet'
+
+        # Version detection: default to 5.5 for modern Antigravity
+        ver = '5.5'
+        if '4.6' in raw_lower or '4-6' in raw_lower:
+            ver = '4.6'
+        elif '3.7' in raw_lower or '3-7' in raw_lower:
+            ver = '3.7'
+        elif '3.5' in raw_lower or '3-5' in raw_lower:
+            ver = '3.5'
+        elif '5.5' in raw_lower or '5-5' in raw_lower or '5' in raw_lower:
+            ver = '5.5'
+
+        # Antigravity Claude 5.5 officially features 1,000,000 (1M) context window
+        if ver == '5.5':
+            ctx_win = 1000000
+            ctx_lbl = '1M'
+        else:
+            ctx_win = 200000
+            ctx_lbl = '200k'
+
         return {
-            'id': 'claude-sonnet-4-6',
-            'name': 'Claude Sonnet 4.6',
-            'context_window': 200000,
-            'context_label': '200k'
+            'id': f"{model_id_prefix}-{ver.replace('.', '-')}",
+            'name': f"Claude {model_type} {ver}",
+            'context_window': ctx_win,
+            'context_label': ctx_lbl
         }
+
     if 'gpt' in raw_lower:
         return {
             'id': 'gpt-oss-120b',
@@ -160,12 +177,24 @@ def normalize_model_specs(raw):
             'context_window': 131072,
             'context_label': '128k'
         }
-    # Default: Gemini models all feature 1M (1,048,576) context windows
+
+    # Gemini 4 Argon
+    if 'argon' in raw_lower or 'gemini-4' in raw_lower or 'gemini 4' in raw_lower:
+        return {
+            'id': raw or 'gemini-4-argon',
+            'name': 'Gemini 4 Argon',
+            'context_window': 1048576,
+            'context_label': '1M'
+        }
+
+    # Gemini general (1M context)
     name = 'Gemini 3.8 Flash'
     if '3.7' in raw_lower:
         name = 'Gemini 3.7 Flash'
     elif '3.6' in raw_lower:
         name = 'Gemini 3.6 Flash'
+    elif '3.5' in raw_lower:
+        name = 'Gemini 3.5 Flash'
     elif '3.1' in raw_lower or 'pro' in raw_lower:
         name = 'Gemini 3.1 Pro'
     return {
@@ -179,18 +208,19 @@ def extract_session_model(cur):
     """Detects active model used in the session from executor_metadata or gen_metadata"""
     try:
         import re
+        pattern = r'(?:gemini-[a-zA-Z0-9\.\-]+|claude-[a-zA-Z0-9\.\-]+|gpt-[a-zA-Z0-9\.\-]+)'
         rows = cur.execute('SELECT data FROM executor_metadata ORDER BY idx DESC LIMIT 10').fetchall()
         for r in rows:
             if r[0]:
                 txt = r[0].decode('latin-1', errors='ignore')
-                found = re.findall(r'(?:gemini-[a-zA-Z0-9\.\-]+|claude-[a-zA-Z0-9\.\-]+|gpt-[a-zA-Z0-9\.\-]+)', txt)
+                found = re.findall(pattern, txt)
                 if found:
                     return normalize_model_specs(found[0])
         rows = cur.execute('SELECT data FROM gen_metadata ORDER BY idx DESC LIMIT 10').fetchall()
         for r in rows:
             if r[0]:
                 txt = r[0].decode('latin-1', errors='ignore')
-                found = re.findall(r'(?:gemini-[a-zA-Z0-9\.\-]+|claude-[a-zA-Z0-9\.\-]+|gpt-[a-zA-Z0-9\.\-]+)', txt)
+                found = re.findall(pattern, txt)
                 if found:
                     return normalize_model_specs(found[0])
     except Exception:

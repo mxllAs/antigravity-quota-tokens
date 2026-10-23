@@ -116,6 +116,14 @@ async function listServerCandidates() {
       const arr = Array.isArray(parsed) ? parsed : [parsed];
       return arr
         .filter((c) => c && c.ProcessId && c.CommandLine)
+        .sort((a, b) => {
+          // Prioritize Desktop App language_server if present
+          const aIsDesktop = /AppData.*antigravity.*resources/i.test(a.CommandLine || '');
+          const bIsDesktop = /AppData.*antigravity.*resources/i.test(b.CommandLine || '');
+          if (aIsDesktop && !bIsDesktop) return -1;
+          if (!aIsDesktop && bIsDesktop) return 1;
+          return 0;
+        })
         .map((c) => ({ pid: c.ProcessId, cmd: c.CommandLine }));
     } catch (e) {
       return [];
@@ -279,20 +287,45 @@ function parseQuota(status, quotaSummary) {
 
   let geminiSummary = null;
   let claudeSummary = null;
+  let gemini4Summary = null;
 
   const groups = quotaSummary?.response?.groups || [];
   for (const g of groups) {
     const dName = g.displayName || '';
-    if (/gemini/i.test(dName)) {
+    if (/gemini\s*4|argon/i.test(dName)) {
+      gemini4Summary = parseBucketGroup(g);
+    } else if (/gemini/i.test(dName)) {
       geminiSummary = parseBucketGroup(g);
     } else if (/claude|gpt|3p/i.test(dName)) {
       claudeSummary = parseBucketGroup(g);
     }
   }
 
+  const configs = status?.cascadeModelConfigData?.clientModelConfigs || [];
+  const clientModels = configs.map((c) => ({
+    id: c.modelId || '',
+    label: c.label || '',
+    tagTitle: c.tagTitle || '',
+    quota_rem:
+      c.quotaInfo?.remainingFraction != null
+        ? Math.round(c.quotaInfo.remainingFraction * 100)
+        : null,
+    reset_time: c.quotaInfo?.resetTime || null,
+  }));
+
+  const hasClaudeModel = configs.some((m) =>
+    /claude/i.test(m.label || m.modelId || '')
+  );
+  const hasClaudeGroup = !!claudeSummary;
+  const has_claude = hasClaudeGroup || hasClaudeModel;
+
+  const hasGemini4Model = configs.some((m) =>
+    /gemini\s*4|argon/i.test(m.label || m.modelId || '')
+  );
+  const has_gemini4 = !!gemini4Summary || hasGemini4Model;
+
   // Fallback if RetrieveUserQuotaSummary was empty
-  if (!geminiSummary || !claudeSummary) {
-    const configs = status?.cascadeModelConfigData?.clientModelConfigs || [];
+  if (!geminiSummary || (!claudeSummary && has_claude)) {
     let geminiModel = null;
     let claudeModel = null;
 
@@ -324,7 +357,7 @@ function parseQuota(status, quotaSummary) {
       };
     }
 
-    if (!claudeSummary && claudeModel) {
+    if (!claudeSummary && claudeModel && has_claude) {
       const rem = Math.round(
         (claudeModel.quotaInfo.remainingFraction ?? 1) * 100
       );
@@ -343,13 +376,50 @@ function parseQuota(status, quotaSummary) {
     }
   }
 
+  // Dynamic active models identification
+  let activeClaudeModel = 'Claude Sonnet 5.5';
+  const foundClaude = clientModels.find((m) => /claude/i.test(m.label));
+  if (foundClaude) {
+    activeClaudeModel = foundClaude.label
+      .replace(/\s*\((?:High|Medium|Low)\)\s*/i, '')
+      .trim();
+  }
+
+  let activeGeminiModel = 'Gemini 3.8 Flash';
+  const foundGemini = clientModels.find((m) => /gemini\s*3\.\d/i.test(m.label));
+  if (foundGemini) {
+    activeGeminiModel = foundGemini.label
+      .replace(/\s*\((?:High|Medium|Low)\)\s*/i, '')
+      .trim();
+  }
+
+  let activeGemini4Model = 'Gemini 4 Argon';
+  const foundGemini4 = clientModels.find((m) =>
+    /gemini\s*4|argon/i.test(m.label)
+  );
+  if (foundGemini4) {
+    activeGemini4Model = foundGemini4.label
+      .replace(/\s*\((?:High|Medium|Low)\)\s*/i, '')
+      .trim();
+  }
+
+  const rawTierName = status?.userTier?.name || 'Google AI Pro';
+  const tier_type = !has_claude ? 'pro_promo' : 'pro_paid';
+  const tier_display = !has_claude
+    ? `${rawTierName} (活动专享)`
+    : rawTierName;
+
   return {
     is_live: true,
     fetched_at: Date.now(),
     user_name,
     user_email,
     user_avatar,
-    tier_name,
+    tier_name: tier_display,
+    raw_tier_name: rawTierName,
+    tier_type,
+    has_claude,
+    has_gemini4,
     prompt_credits: status?.planStatus?.availablePromptCredits ?? null,
     flow_credits: status?.planStatus?.availableFlowCredits ?? null,
     gemini: geminiSummary
@@ -358,20 +428,33 @@ function parseQuota(status, quotaSummary) {
           models_hint: '原生 1M 超长上下文 (104.8 万 tokens)',
           context_window: 1048576,
           context_label: '1M',
-          active_model: 'Gemini 3.8 Flash',
+          active_model: activeGeminiModel,
           ...geminiSummary,
         }
       : null,
-    claude: claudeSummary
-      ? {
-          label: 'Claude & GPT 额度池',
-          models_hint: 'Claude 200k 上下文 · GPT-OSS 128k 上下文',
-          context_window: 200000,
-          context_label: '200k',
-          active_model: 'Claude Opus 4.6',
-          ...claudeSummary,
-        }
-      : null,
+    claude:
+      has_claude && claudeSummary
+        ? {
+            label: 'Claude & GPT 额度池',
+            models_hint: 'Claude 5.5 (1M 上下文) · GPT-OSS 128k 上下文',
+            context_window: 1000000,
+            context_label: '1M',
+            active_model: activeClaudeModel,
+            ...claudeSummary,
+          }
+        : null,
+    gemini4:
+      has_gemini4 && gemini4Summary
+        ? {
+            label: 'Gemini 4 Argon 额度池',
+            models_hint: 'Gemini 4 独立周额度 · 1M 超长上下文',
+            context_window: 1048576,
+            context_label: '1M',
+            active_model: activeGemini4Model,
+            ...gemini4Summary,
+          }
+        : null,
+    client_models: clientModels,
   };
 }
 
