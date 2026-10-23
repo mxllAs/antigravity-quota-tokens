@@ -191,7 +191,7 @@ async function updateDataAndStatusBar(force = false) {
 
   try {
     const [quota, rawTokens] = await Promise.all([
-      getLiveQuota(force),
+      getLiveQuota(force, { appRoot: vscode.env.appRoot }),
       fetchTokens(),
     ]);
 

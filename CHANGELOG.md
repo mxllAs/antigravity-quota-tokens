@@ -3,6 +3,15 @@
 本文档记录 **Antigravity Quota & Token Monitor** 扩展的所有重要版本更新。  
 本格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，并遵循 [语义化版本规范 (SemVer)](https://semver.org/lang/zh-CN/)。
 
+## [1.4.1] - 2026-10-23
+
+### 🐛 缺陷修复 (Fixed)
+* **编辑器多账号切换绑定修复 (Host IDE Process Affinity)**：
+  * 修复了当系统后台同时运行 Antigravity 独立桌面端与 IDE 时，插件优先劫持桌面端进程导致 IDE 内切换账号（如切换为免费活动 Pro 或其他账号）后插件账号始终无法同步刷新的严重缺陷。
+  * 引入 `vscode.env.appRoot` 宿主路径亲和度算法：插件启动与刷新时严格优先精准绑定当前运行的编辑器实例自身语言服务，杜绝跨应用账号串位与死锁。
+
+---
+
 ## [1.4.0] - 2026-10-23
 
 ### ✨ 重大新增 (Features)

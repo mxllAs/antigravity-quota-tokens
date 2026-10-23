@@ -105,10 +105,36 @@ function queryRpc(port, csrfToken, protocol, endpoint = 'GetUserStatus') {
   });
 }
 
-async function listServerCandidates() {
+async function listServerCandidates(options = {}) {
+  const hostAppRoot = (options.appRoot || '').replace(/\\/g, '/').toLowerCase();
+  const execDir = (process.execPath ? path.dirname(process.execPath) : '')
+    .replace(/\\/g, '/')
+    .toLowerCase();
+
+  function getScore(cand) {
+    const rawCmd = (cand.cmd || '').replace(/\\/g, '/').toLowerCase();
+    const rawExe = (cand.exe || '').replace(/\\/g, '/').toLowerCase();
+    const full = `${rawExe} ${rawCmd}`;
+
+    let score = 0;
+    // 1. Exact match with the running editor host's appRoot (e.g. d:/Antigravity IDE/resources/app)
+    if (hostAppRoot && full.includes(hostAppRoot)) {
+      score += 10000;
+    }
+    // 2. Exact match with the running editor host's executable folder
+    if (execDir && full.includes(execDir)) {
+      score += 5000;
+    }
+    // 3. Match editor installation signatures
+    if (full.includes('antigravity ide') || full.includes('antigravity-ide')) {
+      score += 1000;
+    }
+    return score;
+  }
+
   if (process.platform === 'win32') {
     const psCmd =
-      "powershell -NoProfile -Command \"Get-CimInstance Win32_Process | Where-Object { $_.Name -like '*language_server*' -and $_.CommandLine -like '*--csrf_token*' } | Select-Object ProcessId, CommandLine | ConvertTo-Json -Compress\"";
+      "powershell -NoProfile -Command \"Get-CimInstance Win32_Process | Where-Object { $_.Name -like '*language_server*' -and $_.CommandLine -like '*--csrf_token*' } | Select-Object ProcessId, CommandLine, ExecutablePath | ConvertTo-Json -Compress\"";
     const { stdout } = await execCommand(psCmd);
     if (!stdout) return [];
     try {
@@ -116,15 +142,12 @@ async function listServerCandidates() {
       const arr = Array.isArray(parsed) ? parsed : [parsed];
       return arr
         .filter((c) => c && c.ProcessId && c.CommandLine)
-        .sort((a, b) => {
-          // Prioritize Desktop App language_server if present
-          const aIsDesktop = /AppData.*antigravity.*resources/i.test(a.CommandLine || '');
-          const bIsDesktop = /AppData.*antigravity.*resources/i.test(b.CommandLine || '');
-          if (aIsDesktop && !bIsDesktop) return -1;
-          if (!aIsDesktop && bIsDesktop) return 1;
-          return 0;
-        })
-        .map((c) => ({ pid: c.ProcessId, cmd: c.CommandLine }));
+        .map((c) => ({
+          pid: c.ProcessId,
+          cmd: c.CommandLine,
+          exe: c.ExecutablePath || '',
+        }))
+        .sort((a, b) => getScore(b) - getScore(a));
     } catch (e) {
       return [];
     }
@@ -136,10 +159,10 @@ async function listServerCandidates() {
   for (const line of stdout.split('\n')) {
     const m = line.match(/^\s*(\d+)\s+(.*)$/);
     if (m && m[2].includes('--csrf_token')) {
-      out.push({ pid: parseInt(m[1], 10), cmd: m[2] });
+      out.push({ pid: parseInt(m[1], 10), cmd: m[2], exe: '' });
     }
   }
-  return out;
+  return out.sort((a, b) => getScore(b) - getScore(a));
 }
 
 async function listListeningPorts(pid) {
@@ -181,8 +204,8 @@ async function listListeningPorts(pid) {
   return ports;
 }
 
-async function scanForLanguageServer() {
-  const candidates = await listServerCandidates();
+async function scanForLanguageServer(options = {}) {
+  const candidates = await listServerCandidates(options);
 
   for (const cand of candidates) {
     const cmd = cand.cmd || '';
@@ -476,7 +499,7 @@ async function fetchLiveQuotaFromConn(conn) {
   return null;
 }
 
-async function getLiveQuota(forceRefresh = false) {
+async function getLiveQuota(forceRefresh = false, options = {}) {
   const now = Date.now();
   if (!forceRefresh && cachedQuota && now - lastQueryTime < 15000) {
     return cachedQuota;
@@ -498,7 +521,7 @@ async function getLiveQuota(forceRefresh = false) {
 
   // Scan for language server
   try {
-    const conn = await scanForLanguageServer();
+    const conn = await scanForLanguageServer(options);
     if (conn) {
       cachedConn = {
         port: conn.port,
