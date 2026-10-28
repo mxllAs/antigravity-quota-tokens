@@ -3,6 +3,17 @@
 本文档记录 **Antigravity Quota & Token Monitor** 扩展的所有重要版本更新。  
 本格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，并遵循 [语义化版本规范 (SemVer)](https://semver.org/lang/zh-CN/)。
 
+## [1.4.2] - 2026-10-28
+
+### 🚀 架构适配与重大优化 (Architecture & Fixed)
+* **全面适配 Antigravity 最新编辑器架构与统一 Hub 语言服务 (Support New `agy.exe --hub` Backend)**：
+  * 深度适配 Google Antigravity IDE 官方最新更新（内置扩展由 `antigravity` 升级为 `agy`，底层语言服务由旧版 `language_server_windows_x64.exe` 升级为统一的 `agy.exe --hub` 进程架构）。
+  * 彻底解决在不开启桌面端应用时插件常驻显示“检测中... 正在连接语言服务”的识别盲区。
+  * 新增 `--hub-port` 极速探测通道，直接建立 RPC 通信，无需等待端口全面扫描即可毫秒级连接语言服务。
+  * 引入工作区目录（`workspaceDir` / `--add-dir`）亲和度匹配，确保多窗口多工程下精准对接当前工程的专属 Hub 实例。
+
+---
+
 ## [1.4.1] - 2026-10-23
 
 ### 🐛 缺陷修复 (Fixed)

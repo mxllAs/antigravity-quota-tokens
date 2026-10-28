@@ -190,8 +190,14 @@ async function updateDataAndStatusBar(force = false) {
   isRefreshing = true;
 
   try {
+    const wsFolders = vscode.workspace.workspaceFolders || [];
+    const workspaceDir = wsFolders.length > 0 ? wsFolders[0].uri.fsPath : '';
+
     const [quota, rawTokens] = await Promise.all([
-      getLiveQuota(force, { appRoot: vscode.env.appRoot }),
+      getLiveQuota(force, {
+        appRoot: vscode.env.appRoot,
+        workspaceDir,
+      }),
       fetchTokens(),
     ]);
 

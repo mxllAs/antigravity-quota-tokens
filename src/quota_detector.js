@@ -110,6 +110,9 @@ async function listServerCandidates(options = {}) {
   const execDir = (process.execPath ? path.dirname(process.execPath) : '')
     .replace(/\\/g, '/')
     .toLowerCase();
+  const workspaceDir = (options.workspaceDir || '')
+    .replace(/\\/g, '/')
+    .toLowerCase();
 
   function getScore(cand) {
     const rawCmd = (cand.cmd || '').replace(/\\/g, '/').toLowerCase();
@@ -117,15 +120,23 @@ async function listServerCandidates(options = {}) {
     const full = `${rawExe} ${rawCmd}`;
 
     let score = 0;
-    // 1. Exact match with the running editor host's appRoot (e.g. d:/Antigravity IDE/resources/app)
+    // 1. Exact match with workspace directory (if passed, e.g. --add-dir=...)
+    if (workspaceDir && full.includes(workspaceDir)) {
+      score += 20000;
+    }
+    // 2. Exact match with the running editor host's appRoot (e.g. d:/Antigravity IDE/resources/app)
     if (hostAppRoot && full.includes(hostAppRoot)) {
       score += 10000;
     }
-    // 2. Exact match with the running editor host's executable folder
+    // 3. agy hub process (official backend for new Antigravity IDE)
+    if (full.includes('--hub') || full.includes('agy')) {
+      score += 8000;
+    }
+    // 4. Exact match with the running editor host's executable folder
     if (execDir && full.includes(execDir)) {
       score += 5000;
     }
-    // 3. Match editor installation signatures
+    // 5. Match editor installation signatures
     if (full.includes('antigravity ide') || full.includes('antigravity-ide')) {
       score += 1000;
     }
@@ -134,7 +145,7 @@ async function listServerCandidates(options = {}) {
 
   if (process.platform === 'win32') {
     const psCmd =
-      "powershell -NoProfile -Command \"Get-CimInstance Win32_Process | Where-Object { $_.Name -like '*language_server*' -and $_.CommandLine -like '*--csrf_token*' } | Select-Object ProcessId, CommandLine, ExecutablePath | ConvertTo-Json -Compress\"";
+      "powershell -NoProfile -Command \"Get-CimInstance Win32_Process | Where-Object { ($_.Name -like '*language_server*' -or $_.Name -like '*agy*' -or $_.CommandLine -like '*--hub*') -and $_.Name -notlike '*powershell*' -and $_.Name -notlike '*cmd*' -and $_.CommandLine -like '*--csrf_token*' } | Select-Object ProcessId, CommandLine, ExecutablePath | ConvertTo-Json -Compress\"";
     const { stdout } = await execCommand(psCmd);
     if (!stdout) return [];
     try {
@@ -153,12 +164,12 @@ async function listServerCandidates(options = {}) {
     }
   }
 
-  const { stdout } = await execCommand('pgrep -fa language_server');
+  const { stdout } = await execCommand('pgrep -fa "language_server|agy"');
   if (!stdout) return [];
   const out = [];
   for (const line of stdout.split('\n')) {
     const m = line.match(/^\s*(\d+)\s+(.*)$/);
-    if (m && m[2].includes('--csrf_token')) {
+    if (m && m[2].includes('--csrf_token') && !m[2].includes('pgrep')) {
       out.push({ pid: parseInt(m[1], 10), cmd: m[2], exe: '' });
     }
   }
@@ -214,16 +225,22 @@ async function scanForLanguageServer(options = {}) {
 
     const tokenMatch = cmd.match(/--csrf_token[=\s]+([A-Za-z0-9\-_.=+/]+)/);
     const extPortMatch = cmd.match(/--extension_server_port[=\s]+(\d+)/);
+    const hubPortMatch = cmd.match(/--hub-port[=\s]+(\d+)/);
     if (!tokenMatch) continue;
 
     const csrfToken = tokenMatch[1];
     const extPort = extPortMatch ? parseInt(extPortMatch[1], 10) : 0;
+    const hubPort = hubPortMatch ? parseInt(hubPortMatch[1], 10) : 0;
 
     const ports = new Set();
     if (extPort > 0) {
       ports.add(extPort);
       ports.add(extPort + 1);
       ports.add(extPort + 2);
+    }
+    if (hubPort > 0) {
+      ports.add(hubPort);
+      ports.add(hubPort + 4);
     }
     for (const p of await listListeningPorts(pid)) ports.add(p);
 
