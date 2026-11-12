@@ -331,7 +331,8 @@ function renderStatusBar() {
         const weekly = g4.weekly;
         const cdw = weekly ? formatCountdown(weekly.reset_time) : '-';
         const wStr = weekly ? `${weekly.remaining_pct}% (${cdw})` : '-';
-        md.appendMarkdown(`| ${getStatusEmoji(weekly ? weekly.remaining_pct : 100)} **Gemini 4 Argon** | **独立周额度** | ${wStr} | **1M (104.8万)** |\n`);
+        const g4Label = g4.active_model || 'Gemini 4 Argon';
+        md.appendMarkdown(`| ${getStatusEmoji(weekly ? weekly.remaining_pct : 100)} **${g4Label}** | **独立周额度** | ${wStr} | **1M (104.8万)** |\n`);
       }
       if (lastQuotaData.has_claude && lastQuotaData.claude) {
         const c = lastQuotaData.claude;
@@ -395,7 +396,8 @@ function renderStatusBar() {
         const weekly = g4.weekly;
         const cdw = weekly ? formatCountdown(weekly.reset_time) : '-';
         const wStr = weekly ? `${weekly.remaining_pct}% (${cdw})` : '-';
-        md.appendMarkdown(`| ${getStatusEmoji(weekly ? weekly.remaining_pct : 100)} **Gemini 4 Argon** | **Weekly Limit** | ${wStr} | **1M (1,048,576)** |\n`);
+        const g4Label = g4.active_model || 'Gemini 4 Argon';
+        md.appendMarkdown(`| ${getStatusEmoji(weekly ? weekly.remaining_pct : 100)} **${g4Label}** | **Weekly Limit** | ${wStr} | **1M (1,048,576)** |\n`);
       }
       if (lastQuotaData.has_claude && lastQuotaData.claude) {
         const c = lastQuotaData.claude;
@@ -671,10 +673,11 @@ async function showQuickPickMenu() {
       const g4 = lastQuotaData.gemini4;
       const weekly = g4.weekly;
       const cdw = formatCountdown(weekly.reset_time);
+      const g4Name = g4.active_model || 'Gemini 4 Argon';
       items.push({
-        label: `${getStatusEmoji(weekly.remaining_pct)} Gemini 4 Argon 周额度: ${weekly.remaining_pct}% (已用 ${weekly.used_pct}%)`,
+        label: `${getStatusEmoji(weekly.remaining_pct)} ${g4Name} 周额度: ${weekly.remaining_pct}% (已用 ${weekly.used_pct}%)`,
         description: cdw ? `⏱ 周重置: ${cdw}` : '',
-        detail: 'Gemini 4 Argon 独立周额度 · 原生 1M 上下文',
+        detail: g4.models_hint || `${g4Name} 独立周额度 · 原生 1M 上下文`,
       });
     }
     if (lastQuotaData.has_claude && lastQuotaData.claude) {

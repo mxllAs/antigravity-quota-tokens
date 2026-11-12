@@ -3,6 +3,16 @@
 本文档记录 **Antigravity Quota & Token Monitor** 扩展的所有重要版本更新。  
 本格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，并遵循 [语义化版本规范 (SemVer)](https://semver.org/lang/zh-CN/)。
 
+## [1.4.3] - 2026-11-12
+
+### 🚀 架构优化与前瞻支持 (Improvements & Upcoming Support)
+* **前瞻适配 Gemini 4 Carbon 超大模型与 Token 统计归类 (Gemini 4 Carbon Support)**：
+  * 在底层 Token 统计分析器（`token_collector.py`）中新增对 `Gemini 4 Carbon` 的识别匹配与 1M 全模态超长上下文（256k 超大输出）规格解析，确保后续 Ultra 会话的 Token 统计精准入账。
+  * 优化配额检测器对 Gemini 4 系列（Argon / Carbon）的活跃模型提取权重，过滤置灰模型（`tagTitle: Unavailable`），确保 Pro 用户稳定锁定当前可用 `Gemini 4 Argon` 独立周额度。
+  * 界面与状态栏动态适配：支持大盘卡片、悬浮提示及详情项自适应显示当前活跃的 Gemini 4 具体模型（Argon / Carbon）及对应额度。
+
+---
+
 ## [1.4.2] - 2026-10-28
 
 ### 🚀 架构适配与重大优化 (Architecture & Fixed)

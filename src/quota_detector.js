@@ -332,7 +332,9 @@ function parseQuota(status, quotaSummary) {
   const groups = quotaSummary?.response?.groups || [];
   for (const g of groups) {
     const dName = g.displayName || '';
-    if (/gemini\s*4|argon/i.test(dName)) {
+    if (/carbon/i.test(dName)) {
+      gemini4Summary = parseBucketGroup(g);
+    } else if (/gemini\s*4|argon/i.test(dName)) {
       gemini4Summary = parseBucketGroup(g);
     } else if (/gemini/i.test(dName)) {
       geminiSummary = parseBucketGroup(g);
@@ -360,7 +362,8 @@ function parseQuota(status, quotaSummary) {
   const has_claude = hasClaudeGroup || hasClaudeModel;
 
   const hasGemini4Model = configs.some((m) =>
-    /gemini\s*4|argon/i.test(m.label || m.modelId || '')
+    /gemini\s*4|argon|carbon/i.test(m.label || m.modelId || '') &&
+    m.tagTitle !== 'Unavailable'
   );
   const has_gemini4 = !!gemini4Summary || hasGemini4Model;
 
@@ -434,9 +437,12 @@ function parseQuota(status, quotaSummary) {
   }
 
   let activeGemini4Model = 'Gemini 4 Argon';
-  const foundGemini4 = clientModels.find((m) =>
-    /gemini\s*4|argon/i.test(m.label)
-  );
+  const foundGemini4 =
+    clientModels.find(
+      (m) =>
+        /gemini\s*4|argon|carbon/i.test(m.label) && m.tagTitle !== 'Unavailable'
+    ) ||
+    clientModels.find((m) => /gemini\s*4|argon|carbon/i.test(m.label));
   if (foundGemini4) {
     activeGemini4Model = foundGemini4.label
       .replace(/\s*\((?:High|Medium|Low)\)\s*/i, '')
@@ -486,8 +492,8 @@ function parseQuota(status, quotaSummary) {
     gemini4:
       has_gemini4 && gemini4Summary
         ? {
-            label: 'Gemini 4 Argon 额度池',
-            models_hint: 'Gemini 4 独立周额度 · 1M 超长上下文',
+            label: `${activeGemini4Model} 额度池`,
+            models_hint: `${activeGemini4Model} 独立周额度 · 1M 超长上下文`,
             context_window: 1048576,
             context_label: '1M',
             active_model: activeGemini4Model,

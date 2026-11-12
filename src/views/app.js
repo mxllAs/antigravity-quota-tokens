@@ -368,13 +368,21 @@ function renderData(quota, tokens) {
         wRow.style.display = 'none';
       }
     }
-    // Gemini 4 Argon Pool (Desktop/New version)
+    // Gemini 4 Argon / Carbon Pool (Desktop/New version)
     const cardG4 = document.getElementById('cardGemini4');
     if (cardG4) {
       if (quota.gemini4 && quota.gemini4.weekly) {
         cardG4.style.display = 'block';
         const g4 = quota.gemini4;
         const weekly = g4.weekly;
+        if (g4.label) {
+          const lblG4 = document.getElementById('lblGemini4Pool');
+          if (lblG4) lblG4.innerText = g4.label;
+        }
+        if (g4.models_hint) {
+          const g4Hint = document.getElementById('gemini4ModelsHint');
+          if (g4Hint) g4Hint.innerText = g4.models_hint;
+        }
         document.getElementById('gemini4Pct').innerText = weekly.remaining_pct + '%';
         document.getElementById('gemini4Bar').style.width = weekly.remaining_pct + '%';
         document.getElementById('gemini4Used').innerText = (currentLang === 'en' ? 'Weekly Used: ' : '周额度消耗: ') + weekly.used_pct + '%';

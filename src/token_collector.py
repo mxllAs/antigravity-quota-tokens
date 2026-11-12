@@ -178,6 +178,15 @@ def normalize_model_specs(raw):
             'context_label': '128k'
         }
 
+    # Gemini 4 Carbon
+    if 'carbon' in raw_lower:
+        return {
+            'id': raw or 'gemini-4-carbon',
+            'name': 'Gemini 4 Carbon',
+            'context_window': 1048576,
+            'context_label': '1M'
+        }
+
     # Gemini 4 Argon
     if 'argon' in raw_lower or 'gemini-4' in raw_lower or 'gemini 4' in raw_lower:
         return {
