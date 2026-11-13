@@ -5,7 +5,7 @@ const { execFile } = require('child_process');
 const { getLiveQuota } = require('./src/quota_detector');
 const { getWebviewHtml } = require('./src/webview_ui');
 const { deleteSessionFiles, deleteProjectSessions } = require('./src/session_cleaner');
-const { getArchivePath, mergeScanWithArchive, exportDataForSync } = require('./src/token_archive');
+const { getArchivePath, mergeScanWithArchive, exportDataForSync, computeWeeklyModelUsage } = require('./src/token_archive');
 const { pushTokenStatsToRemote } = require('./src/sync_client');
 
 let statusBarItem;
@@ -207,6 +207,12 @@ async function updateDataAndStatusBar(force = false) {
 
     if (quota) lastQuotaData = quota;
     if (tokens) lastTokenData = tokens;
+    if (lastTokenData) {
+      lastTokenData.weekly_models = computeWeeklyModelUsage(
+        lastTokenData.recent_model_usage,
+        lastQuotaData
+      );
+    }
 
     renderStatusBar();
     if (webviewProvider) {
@@ -563,6 +569,12 @@ class QuotaWebviewViewProvider {
 
   update() {
     if (this._view) {
+      if (lastTokenData) {
+        lastTokenData.weekly_models = computeWeeklyModelUsage(
+          lastTokenData.recent_model_usage,
+          lastQuotaData
+        );
+      }
       this._view.webview.postMessage({
         type: 'update',
         quota: lastQuotaData,
@@ -816,7 +828,17 @@ function copySummaryToClipboard() {
   if (q) {
     report += `### ⚡ 实时配额\n`;
     if (q.gemini) report += `- **Gemini**: 剩余 ${q.gemini.remaining_pct}% (重置: ${q.gemini.reset_time})\n`;
+    if (q.gemini4 && q.gemini4.weekly) report += `- **${q.gemini4.active_model || 'Gemini 4 Argon'}**: 周剩余 ${q.gemini4.weekly.remaining_pct}% (重置: ${q.gemini4.weekly.reset_time})\n`;
     if (q.claude) report += `- **Claude**: 剩余 ${q.claude.remaining_pct}% (重置: ${q.claude.reset_time})\n`;
+    report += `\n`;
+  }
+
+  const wm = lastTokenData.weekly_models;
+  if (wm && Array.isArray(wm.models) && wm.models.length > 0) {
+    report += `### 📅 本周期各模型消耗\n`;
+    for (const m of wm.models) {
+      report += `- **${m.name}** (${m.window_label}): 总计 ${formatChinese(m.total_tokens)} (输入 ${formatChinese(m.input_tokens)} · 缓存 ${formatChinese(m.cached_tokens)} · 输出 ${formatChinese(m.output_tokens)} · ${m.turns} 轮)\n`;
+    }
   }
 
   vscode.env.clipboard.writeText(report);

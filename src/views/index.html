@@ -220,6 +220,20 @@
     </div>
   </div>
 
+  <!-- Section 2.5: Weekly Quota Cycle Model Consumption -->
+  <div class="section-title" id="secWeeklyModelsRow">
+    <span id="lblWeeklyModels">📅 本周期各模型消耗</span>
+    <button class="weekly-mode-toggle" id="btnWeeklyMetricMode" title="切换统计口径：总 Token / 仅非缓存有效消耗 (Input+Output)">
+      <span id="lblWeeklyMetricMode">总 Token</span>
+    </button>
+  </div>
+  <div class="card weekly-models-card" id="cardWeeklyModels">
+    <div class="weekly-models-summary" id="weeklyModelsSummary">
+      <span>正在统计本周期模型消耗...</span>
+    </div>
+    <div class="weekly-models-list" id="weeklyModelsList"></div>
+  </div>
+
   <!-- Section 3: GitHub Activity Heatmap -->
   <div class="section-title">
     <span id="lblHeatmap">GitHub 活跃贡献热力图</span>

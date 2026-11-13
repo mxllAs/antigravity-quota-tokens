@@ -130,6 +130,9 @@ function mergeScanWithArchive(scanResult, archivePath, targetDate) {
 
   const archive = loadArchive(archivePath);
   const scannedSessionIds = new Set();
+  const cutoffSec = Math.floor(Date.now() / 1000) - 15 * 86400;
+  const pruneRecent = (list) =>
+    Array.isArray(list) ? list.filter((e) => e && (e.t || 0) >= cutoffSec) : [];
 
   // 1. Process scanned sessions from existing DBs
   if (scanResult && Array.isArray(scanResult.projects)) {
@@ -175,6 +178,10 @@ function mergeScanWithArchive(scanResult, archivePath, targetDate) {
               existing.daily[d] = dVal;
             }
           }
+
+          if (Array.isArray(sess.recent_model_usage)) {
+            existing.recent_model_usage = pruneRecent(sess.recent_model_usage);
+          }
         } else {
           // New session discovered
           archive.sessions[fullId] = {
@@ -203,6 +210,7 @@ function mergeScanWithArchive(scanResult, archivePath, targetDate) {
               thinking: sess.thinking_tokens || 0,
               turns: sess.turns || 0,
             } },
+            recent_model_usage: pruneRecent(sess.recent_model_usage),
             mtime: sess.mtime || Math.floor(Date.now() / 1000),
             is_deleted_locally: false,
           };
@@ -220,9 +228,10 @@ function mergeScanWithArchive(scanResult, archivePath, targetDate) {
     }
   }
 
-  // 3. Re-aggregate daily_map, projects, and summary from ALL archive sessions
+  // 3. Re-aggregate daily_map, projects, recent model timeline, and summary from ALL archive sessions
   const dailyMap = {};
   const projectsMap = {};
+  const recentModelMap = new Map();
   let allTimeTokens = 0;
   let totalTurns = 0;
   let totalSessions = 0;
@@ -238,6 +247,25 @@ function mergeScanWithArchive(scanResult, archivePath, targetDate) {
 
     allTimeTokens += sTotal;
     totalTurns += sTurns;
+
+    if (Array.isArray(s.recent_model_usage) && s.recent_model_usage.length > 0) {
+      s.recent_model_usage = pruneRecent(s.recent_model_usage);
+      for (const item of s.recent_model_usage) {
+        if (!item || !item.m) continue;
+        const key = `${item.t}|${item.m}`;
+        let bucket = recentModelMap.get(key);
+        if (!bucket) {
+          bucket = { t: item.t, m: item.m, tot: 0, in: 0, ca: 0, out: 0, th: 0, n: 0 };
+          recentModelMap.set(key, bucket);
+        }
+        bucket.tot += item.tot || 0;
+        bucket.in += item.in || 0;
+        bucket.ca += item.ca || 0;
+        bucket.out += item.out || 0;
+        bucket.th += item.th || 0;
+        bucket.n += item.n || 0;
+      }
+    }
 
     // Aggregate by project
     const pName = s.project || 'General';
@@ -414,6 +442,8 @@ function mergeScanWithArchive(scanResult, archivePath, targetDate) {
       session_items: p.session_items.filter((s) => !s.is_deleted_locally),
     }));
 
+  const recentModelUsage = Array.from(recentModelMap.values()).sort((a, b) => (a.t || 0) - (b.t || 0));
+
   // 9. Return comprehensive merged data object
   return {
     today: mergedToday,
@@ -437,6 +467,7 @@ function mergeScanWithArchive(scanResult, archivePath, targetDate) {
     },
     projects: activeProjects,
     all_daily: allDaily,
+    recent_model_usage: recentModelUsage,
     archive_meta: {
       archived_sessions_count: Object.values(archive.sessions).filter((s) => s.is_deleted_locally).length,
       total_sessions_count: totalSessions,
@@ -506,6 +537,162 @@ function exportDataForSync(archivePath, mode = 'public') {
   return payload;
 }
 
+/**
+ * Maps a normalized model name to its quota pool identifier.
+ * @param {string} modelName
+ * @returns {'gemini'|'gemini4'|'claude'}
+ */
+function getModelPool(modelName) {
+  const m = String(modelName || '');
+  if (/claude|gpt/i.test(m)) return 'claude';
+  if (/argon|carbon/i.test(m)) return 'gemini4';
+  return 'gemini';
+}
+
+function formatShortLocalDate(ms) {
+  const d = new Date(ms);
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${mm}.${dd}`;
+}
+
+function formatLocalDateTime(ms) {
+  const d = new Date(ms);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  const hh = String(d.getHours()).padStart(2, '0');
+  const min = String(d.getMinutes()).padStart(2, '0');
+  return `${y}-${m}-${day} ${hh}:${min}`;
+}
+
+/**
+ * Computes active 7-day weekly quota windows for each pool from live quota reset times.
+ * Falls back cleanly to rolling 7 days when a pool's reset_time is unavailable.
+ * @param {object|null} quota
+ * @param {number} [nowMs=Date.now()]
+ * @returns {object}
+ */
+function resolvePoolWindows(quota, nowMs = Date.now()) {
+  const weekMs = 7 * 86400 * 1000;
+  const buildFromReset = (resetIso) => {
+    if (!resetIso) return null;
+    let endMs = Date.parse(resetIso);
+    if (!Number.isFinite(endMs)) return null;
+    while (endMs < nowMs) {
+      endMs += weekMs;
+    }
+    const startMs = endMs - weekMs;
+    return {
+      start_ms: startMs,
+      end_ms: endMs,
+      label: `${formatShortLocalDate(startMs)}–${formatShortLocalDate(endMs)}`,
+      range_detail: `${formatLocalDateTime(startMs)} ~ ${formatLocalDateTime(endMs)}`,
+      is_estimated: false,
+    };
+  };
+
+  const fallbackEnd = nowMs;
+  const fallbackStart = nowMs - weekMs;
+  const fallbackWin = {
+    start_ms: fallbackStart,
+    end_ms: fallbackEnd,
+    label: `${formatShortLocalDate(fallbackStart)}–${formatShortLocalDate(fallbackEnd)}`,
+    range_detail: `${formatLocalDateTime(fallbackStart)} ~ ${formatLocalDateTime(fallbackEnd)}`,
+    is_estimated: true,
+  };
+
+  const geminiWin = buildFromReset(quota?.gemini?.weekly?.reset_time);
+  const gemini4Win = buildFromReset(quota?.gemini4?.weekly?.reset_time);
+  const claudeWin = buildFromReset(quota?.claude?.weekly?.reset_time);
+
+  return {
+    gemini: geminiWin || fallbackWin,
+    gemini4: gemini4Win || geminiWin || fallbackWin,
+    claude: claudeWin || geminiWin || fallbackWin,
+  };
+}
+
+/**
+ * Aggregates turn-level recent_model_usage buckets into per-model consumption
+ * inside each pool's active weekly quota cycle.
+ * @param {Array<object>} recentModelUsage
+ * @param {object|null} quota
+ * @param {number} [nowMs=Date.now()]
+ * @returns {object}
+ */
+function computeWeeklyModelUsage(recentModelUsage, quota, nowMs = Date.now()) {
+  const windows = resolvePoolWindows(quota, nowMs);
+  const byModel = new Map();
+  let totalTokens = 0;
+  let effectiveTokens = 0;
+  let totalTurns = 0;
+
+  if (Array.isArray(recentModelUsage)) {
+    for (const entry of recentModelUsage) {
+      if (!entry || !entry.m) continue;
+      const tsMs = (entry.t || 0) * 1000;
+      const pool = getModelPool(entry.m);
+      const win = windows[pool] || windows.gemini;
+      // 120s tolerance accommodates minute-bucket truncation on the current active minute
+      if (tsMs < win.start_ms || tsMs > win.end_ms || tsMs > nowMs + 120000) {
+        continue;
+      }
+
+      let item = byModel.get(entry.m);
+      if (!item) {
+        item = {
+          name: entry.m,
+          pool,
+          window_label: win.label,
+          range_detail: win.range_detail,
+          is_estimated: !!win.is_estimated,
+          total_tokens: 0,
+          input_tokens: 0,
+          cached_tokens: 0,
+          output_tokens: 0,
+          thinking_tokens: 0,
+          effective_tokens: 0,
+          turns: 0,
+        };
+        byModel.set(entry.m, item);
+      }
+
+      const tot = entry.tot || 0;
+      const inp = entry.in || 0;
+      const ca = entry.ca || 0;
+      const out = entry.out || 0;
+      const th = entry.th || 0;
+      const eff = inp + out;
+      const turns = entry.n || 0;
+
+      item.total_tokens += tot;
+      item.input_tokens += inp;
+      item.cached_tokens += ca;
+      item.output_tokens += out;
+      item.thinking_tokens += th;
+      item.effective_tokens += eff;
+      item.turns += turns;
+
+      totalTokens += tot;
+      effectiveTokens += eff;
+      totalTurns += turns;
+    }
+  }
+
+  const models = Array.from(byModel.values()).sort(
+    (a, b) => b.total_tokens - a.total_tokens
+  );
+
+  return {
+    windows,
+    models,
+    total_tokens: totalTokens,
+    effective_tokens: effectiveTokens,
+    total_turns: totalTurns,
+  };
+}
+
 module.exports = {
   getDefaultArchive,
   getArchivePath,
@@ -513,4 +700,7 @@ module.exports = {
   saveArchive,
   mergeScanWithArchive,
   exportDataForSync,
+  getModelPool,
+  resolvePoolWindows,
+  computeWeeklyModelUsage,
 };

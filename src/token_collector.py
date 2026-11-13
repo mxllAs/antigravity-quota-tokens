@@ -266,6 +266,45 @@ def normalize_model_specs(raw):
         'context_label': '1M'
     }
 
+def extract_turn_model(sub1):
+    """Extracts exact normalized model specs from a single turn's gen_metadata sub-message."""
+    try:
+        enum_m = ''
+        if 20 in sub1:
+            for _, b20 in sub1[20]:
+                if b'model_enum' in b20:
+                    m_enum = re.search(rb'model_enum\x12[\x01-\x40]([A-Za-z0-9_\-\.]+)', b20)
+                    if m_enum:
+                        enum_m = m_enum.group(1).decode('ascii', errors='ignore')
+                        break
+        if enum_m and enum_m.upper() in PLACEHOLDER_MODEL_MAP:
+            return normalize_model_specs(enum_m)
+
+        lbl = sub1[21][0][1].decode('utf-8', errors='ignore').strip() if 21 in sub1 and sub1[21] else ''
+        slug = sub1[19][0][1].decode('utf-8', errors='ignore').strip() if 19 in sub1 and sub1[19] else ''
+        raw = lbl or slug or enum_m
+        if raw:
+            return normalize_model_specs(raw)
+    except Exception:
+        pass
+    return None
+
+def serialize_model_buckets(buckets):
+    """Serializes sorted (timestamp_sec, model_name) token buckets for JSON output."""
+    return [
+        {
+            "t": ts_sec,
+            "m": m_name,
+            "tot": b["total"],
+            "in": b["input"],
+            "ca": b["cached"],
+            "out": b["output"],
+            "th": b["thinking"],
+            "n": b["turns"],
+        }
+        for (ts_sec, m_name), b in sorted(buckets.items())
+    ]
+
 def extract_session_model(cur):
     """Detects active model used in the session from per-turn gen_metadata or executor_metadata"""
     try:
@@ -316,6 +355,7 @@ def collect_tokens(target_date=None, target_workspace=""):
         target_date = datetime.now().strftime('%Y-%m-%d')
     
     target_workspace_norm = os.path.normpath(target_workspace).lower() if target_workspace else ""
+    cutoff_ts = int(datetime.now().timestamp()) - 15 * 86400
 
     summary = {
         "today": {
@@ -348,7 +388,8 @@ def collect_tokens(target_date=None, target_workspace=""):
         },
         "projects": defaultdict(lambda: {"total": 0, "input": 0, "cached": 0, "output": 0, "thinking": 0, "sessions": 0}),
         "project_sessions": defaultdict(list),
-        "daily_map": defaultdict(lambda: {"total": 0, "input": 0, "cached": 0, "output": 0, "thinking": 0, "turns": 0})
+        "daily_map": defaultdict(lambda: {"total": 0, "input": 0, "cached": 0, "output": 0, "thinking": 0, "turns": 0}),
+        "recent_model_buckets": defaultdict(lambda: {"total": 0, "input": 0, "cached": 0, "output": 0, "thinking": 0, "turns": 0}),
     }
 
     db_paths = []
@@ -414,11 +455,13 @@ def collect_tokens(target_date=None, target_workspace=""):
                 session_turns = 0
                 session_dates = []
                 session_daily = defaultdict(lambda: {"total": 0, "input": 0, "cached": 0, "output": 0, "thinking": 0, "turns": 0})
+                session_recent_raw = []
                 last_turn_context = 0
                 last_turn_input = 0
                 last_turn_cached = 0
 
                 try:
+                    db_mtime_fallback = int(os.path.getmtime(db_path))
                     rows = cur.execute('SELECT idx, data FROM gen_metadata ORDER BY idx ASC').fetchall()
                     for idx, data in rows:
                         try:
@@ -429,6 +472,31 @@ def collect_tokens(target_date=None, target_workspace=""):
                                 sub1 = parse_proto(p1)
                                 if 4 not in sub1:
                                     continue
+
+                                turn_spec = extract_turn_model(sub1)
+
+                                # Accurately resolve step timestamp from last_step_index
+                                step_idx = None
+                                if 20 in sub1:
+                                    for _, b20 in sub1[20]:
+                                        if b'last_step_index' in b20:
+                                            m_step = re.search(rb'last_step_index\x12[\x01-\x10](\d+)', b20)
+                                            if m_step:
+                                                try:
+                                                    step_idx = int(m_step.group(1))
+                                                    break
+                                                except Exception:
+                                                    pass
+
+                                ts = None
+                                if step_idx is not None and step_idx in step_times:
+                                    ts = step_times[step_idx]
+                                if not ts:
+                                    ts = step_times.get(idx)
+                                if not ts:
+                                    ts = db_mtime_fallback
+                                step_date = datetime.fromtimestamp(ts).strftime('%Y-%m-%d')
+
                                 for _, p4 in sub1[4]:
                                     usage = parse_proto(p4)
                                     inp = usage.get(2, [(0, 0)])[0][1]
@@ -466,27 +534,6 @@ def collect_tokens(target_date=None, target_workspace=""):
                                         cp["output_tokens"] += out
                                         cp["thinking_tokens"] += thinking
 
-                                    # Accurately resolve step timestamp from last_step_index
-                                    step_idx = None
-                                    if 20 in sub1:
-                                        for _, b20 in sub1[20]:
-                                            if b'last_step_index' in b20:
-                                                m_step = re.search(rb'last_step_index\x12[\x01-\x10](\d+)', b20)
-                                                if m_step:
-                                                    try:
-                                                        step_idx = int(m_step.group(1))
-                                                        break
-                                                    except Exception:
-                                                        pass
-
-                                    ts = None
-                                    if step_idx is not None and step_idx in step_times:
-                                        ts = step_times[step_idx]
-                                    if not ts:
-                                        ts = step_times.get(idx)
-                                    if not ts:
-                                        ts = int(os.path.getmtime(db_path))
-                                    step_date = datetime.fromtimestamp(ts).strftime('%Y-%m-%d')
                                     session_dates.append(step_date)
 
                                     # Session-level daily map for persistence archive
@@ -516,6 +563,10 @@ def collect_tokens(target_date=None, target_workspace=""):
                                         td["output_tokens"] += out
                                         td["thinking_tokens"] += thinking
                                         td["turns"] += 1
+
+                                    if ts >= cutoff_ts:
+                                        ts_sec = int(ts)
+                                        session_recent_raw.append((ts_sec, turn_spec, tot, inp, cached, out, thinking))
                         except Exception:
                             pass
                 except Exception:
@@ -532,6 +583,20 @@ def collect_tokens(target_date=None, target_workspace=""):
                     sess_title = extract_session_title(cur)
                     sess_model = extract_session_model(cur)
                     ctx_pct = round((last_turn_context / sess_model["context_window"]) * 100, 1) if sess_model["context_window"] > 0 else 0.0
+
+                    # Aggregate per-second per-model timeline for recent weekly quota attribution
+                    sess_recent_buckets = defaultdict(lambda: {"total": 0, "input": 0, "cached": 0, "output": 0, "thinking": 0, "turns": 0})
+                    for ts_sec, t_spec, tot, inp, cached, out, thinking in session_recent_raw:
+                        m_name = (t_spec or sess_model)["name"]
+                        for bucket in (sess_recent_buckets[(ts_sec, m_name)], summary["recent_model_buckets"][(ts_sec, m_name)]):
+                            bucket["total"] += tot
+                            bucket["input"] += inp
+                            bucket["cached"] += cached
+                            bucket["output"] += out
+                            bucket["thinking"] += thinking
+                            bucket["turns"] += 1
+
+                    sess_recent_usage = serialize_model_buckets(sess_recent_buckets)
 
                     sess_item = {
                         "id": convo_id[:8],
@@ -552,6 +617,7 @@ def collect_tokens(target_date=None, target_workspace=""):
                         "thinking_tokens": session_thinking,
                         "turns": session_turns,
                         "daily": dict(session_daily),
+                        "recent_model_usage": sess_recent_usage,
                         "mtime": db_mtime
                     }
                     summary["project_sessions"][project_name].append(sess_item)
@@ -609,9 +675,12 @@ def collect_tokens(target_date=None, target_workspace=""):
         })
     summary["all_daily"] = all_daily
 
+    summary["recent_model_usage"] = serialize_model_buckets(summary["recent_model_buckets"])
+
     # Clean up internal maps
     del summary["project_sessions"]
     del summary["daily_map"]
+    del summary["recent_model_buckets"]
 
     return summary
 

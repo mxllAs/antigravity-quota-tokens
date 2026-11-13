@@ -75,6 +75,15 @@ const I18N = {
     contextPrefix: '上下文: ',
     archivedTag: '(已归档)',
     cleanTip: '本地会话文件已清理，Token历史与热力图已永久归档',
+    secWeeklyModels: '📅 本周期各模型消耗',
+    weeklyModeTotal: '总 Token',
+    weeklyModeEffective: '非缓存 I/O',
+    weeklyModeTip: '切换统计口径：总 Token / 仅非缓存有效输入+输出',
+    weeklyEmpty: '当前周额度周期内暂无本地模型消耗',
+    weeklyPoolGemini: 'Gemini 池',
+    weeklyPoolGemini4: 'Argon 周池',
+    weeklyPoolClaude: 'Claude 池',
+    weeklyEstimatedTag: '近7天',
   },
   en: {
     topTitle: '⚡ Real-time Quota & Usage',
@@ -141,12 +150,22 @@ const I18N = {
     contextPrefix: 'Context: ',
     archivedTag: '(Archived)',
     cleanTip: 'Local files freed, Token history permanently archived',
+    secWeeklyModels: '📅 Weekly Usage by Model',
+    weeklyModeTotal: 'Total',
+    weeklyModeEffective: 'Non-Cache I/O',
+    weeklyModeTip: 'Toggle metric: All Tokens vs Fresh Input + Output',
+    weeklyEmpty: 'No local model usage in current weekly cycle',
+    weeklyPoolGemini: 'Gemini',
+    weeklyPoolGemini4: 'Argon',
+    weeklyPoolClaude: 'Claude',
+    weeklyEstimatedTag: '7d',
   },
 };
 
 let currentLang = 'zh';
 let lastQuota = null;
 let lastTokens = null;
+let weeklyMetricMode = 'total';
 
 function formatUnit(num) {
   if (num == null || isNaN(num)) return '0';
@@ -254,6 +273,17 @@ function applyI18n() {
 
   document.getElementById('lblHistory').innerText = t.secHistory;
   document.getElementById('lblHistorySub').innerText = t.subHistory;
+
+  const lblWeekly = document.getElementById('lblWeeklyModels');
+  if (lblWeekly) lblWeekly.innerText = t.secWeeklyModels;
+  const btnMode = document.getElementById('btnWeeklyMetricMode');
+  const lblMode = document.getElementById('lblWeeklyMetricMode');
+  if (btnMode && lblMode) {
+    btnMode.title = t.weeklyModeTip;
+    btnMode.classList.toggle('active', weeklyMetricMode === 'effective');
+    lblMode.innerText =
+      weeklyMetricMode === 'effective' ? t.weeklyModeEffective : t.weeklyModeTotal;
+  }
 }
 
 // Refresh action
@@ -293,6 +323,17 @@ document.getElementById('btnLang').addEventListener('click', () => {
   }
   showToast(currentLang === 'zh' ? '已切换为中文' : 'Switched to English');
 });
+
+const btnWeeklyModeEl = document.getElementById('btnWeeklyMetricMode');
+if (btnWeeklyModeEl) {
+  btnWeeklyModeEl.addEventListener('click', () => {
+    weeklyMetricMode = weeklyMetricMode === 'total' ? 'effective' : 'total';
+    applyI18n();
+    if (lastTokens) {
+      renderWeeklyModels(lastTokens.weekly_models);
+    }
+  });
+}
 
 // Message listener from extension
 window.addEventListener('message', (event) => {
@@ -600,6 +641,11 @@ function renderData(quota, tokens) {
       (td.thinking_tokens / sum) * 100 + '%';
   }
 
+  // 3.5 Weekly Quota Cycle Consumption by Model
+  if (tokens) {
+    renderWeeklyModels(tokens.weekly_models);
+  }
+
   // 4. GitHub Heatmap Render
   if (tokens && tokens.all_daily) {
     renderHeatmap(tokens.all_daily);
@@ -609,6 +655,153 @@ function renderData(quota, tokens) {
   if (tokens && tokens.projects) {
     renderProjectsWithSessions(tokens.projects, tokens.current_project);
   }
+}
+
+// ==================== Weekly Models Breakdown ====================
+function renderWeeklyModels(wm) {
+  const t = I18N[currentLang] || I18N.zh;
+  const summaryEl = document.getElementById('weeklyModelsSummary');
+  const listEl = document.getElementById('weeklyModelsList');
+  if (!summaryEl || !listEl) return;
+
+  listEl.innerHTML = '';
+
+  const models = wm && Array.isArray(wm.models) ? wm.models : [];
+  if (models.length === 0) {
+    summaryEl.innerHTML =
+      currentLang === 'en'
+        ? '<span>0 models · 0 turns</span>'
+        : '<span>0 个模型 · 0 轮</span>';
+    const emptyDiv = document.createElement('div');
+    emptyDiv.className = 'weekly-models-empty';
+    emptyDiv.innerText = t.weeklyEmpty;
+    listEl.appendChild(emptyDiv);
+    return;
+  }
+
+  const getMetric = (m) =>
+    weeklyMetricMode === 'effective'
+      ? m.effective_tokens || 0
+      : m.total_tokens || 0;
+
+  const sorted = [...models].sort((a, b) => getMetric(b) - getMetric(a));
+  const maxVal = Math.max(1, getMetric(sorted[0]));
+  const sumVal = sorted.reduce((acc, m) => acc + getMetric(m), 0);
+
+  summaryEl.innerHTML = '';
+  const sumLeft = document.createElement('span');
+  sumLeft.innerText =
+    currentLang === 'en'
+      ? `${sorted.length} models · Total ${formatUnit(sumVal)}`
+      : `共 ${sorted.length} 个模型 · 合计 ${formatUnit(sumVal)}`;
+  const sumRight = document.createElement('span');
+  sumRight.innerText = `${wm.total_turns || 0} ${t.turns}`;
+  summaryEl.appendChild(sumLeft);
+  summaryEl.appendChild(sumRight);
+
+  const poolNames = {
+    gemini: t.weeklyPoolGemini,
+    gemini4: t.weeklyPoolGemini4,
+    claude: t.weeklyPoolClaude,
+  };
+
+  sorted.forEach((m) => {
+    const val = getMetric(m);
+    const pctOfMax = Math.max(4, Math.round((val / maxVal) * 100));
+    const sharePct =
+      sumVal > 0 ? ((val / sumVal) * 100).toFixed(1) + '%' : '0%';
+    const poolClass =
+      m.pool === 'claude' || m.pool === 'gemini4' ? m.pool : 'gemini';
+    const poolLabel = poolNames[poolClass] || t.weeklyPoolGemini;
+    const cycleLabel = m.is_estimated
+      ? t.weeklyEstimatedTag
+      : m.window_label || t.weeklyEstimatedTag;
+
+    const row = document.createElement('div');
+    row.className = 'weekly-model-row';
+    row.title =
+      `${m.name} (${poolLabel})\n` +
+      (currentLang === 'en' ? 'Cycle: ' : '周期: ') +
+      (m.range_detail || cycleLabel) +
+      (m.is_estimated
+        ? currentLang === 'en'
+          ? ' (rolling 7d fallback)'
+          : ' (离线估算近7天)'
+        : '') +
+      `\n` +
+      (currentLang === 'en' ? 'Total: ' : '总计: ') +
+      `${formatNumber(m.total_tokens)} (${sharePct})\n` +
+      (currentLang === 'en' ? 'Input: ' : '输入: ') +
+      `${formatUnit(m.input_tokens)} · ` +
+      (currentLang === 'en' ? 'Cache: ' : '缓存: ') +
+      `${formatUnit(m.cached_tokens)}\n` +
+      (currentLang === 'en' ? 'Output: ' : '输出: ') +
+      `${formatUnit(m.output_tokens)} · ` +
+      (currentLang === 'en' ? 'Thinking: ' : '思考: ') +
+      `${formatUnit(m.thinking_tokens)}`;
+
+    const top = document.createElement('div');
+    top.className = 'weekly-model-top';
+
+    const left = document.createElement('div');
+    left.className = 'weekly-model-left';
+
+    const dot = document.createElement('span');
+    dot.className = `weekly-model-dot pool-dot-${poolClass}`;
+
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'weekly-model-name';
+    nameSpan.innerText = m.name;
+
+    const badge = document.createElement('span');
+    badge.className = `weekly-pool-badge pool-badge-${poolClass}`;
+    badge.innerText = `${poolLabel} · ${cycleLabel}`;
+
+    left.appendChild(dot);
+    left.appendChild(nameSpan);
+    left.appendChild(badge);
+
+    const valSpan = document.createElement('div');
+    valSpan.className = 'weekly-model-val';
+    valSpan.innerText = formatUnit(val);
+
+    top.appendChild(left);
+    top.appendChild(valSpan);
+
+    const barBg = document.createElement('div');
+    barBg.className = 'weekly-model-bar-bg';
+    const barFill = document.createElement('div');
+    barFill.className = `weekly-model-bar-fill pool-fill-${poolClass}`;
+    barFill.style.width = pctOfMax + '%';
+    barBg.appendChild(barFill);
+
+    const sub = document.createElement('div');
+    sub.className = 'weekly-model-sub';
+
+    const subLeft = document.createElement('span');
+    if (weeklyMetricMode === 'effective') {
+      subLeft.innerText =
+        currentLang === 'en'
+          ? `In ${formatUnit(m.input_tokens)} · Out ${formatUnit(m.output_tokens)} (Cache ${formatUnit(m.cached_tokens)})`
+          : `输入 ${formatUnit(m.input_tokens)} · 输出 ${formatUnit(m.output_tokens)} (已排除缓存 ${formatUnit(m.cached_tokens)})`;
+    } else {
+      subLeft.innerText =
+        currentLang === 'en'
+          ? `In ${formatUnit(m.input_tokens)} · Cache ${formatUnit(m.cached_tokens)} · Out ${formatUnit(m.output_tokens)}`
+          : `输入 ${formatUnit(m.input_tokens)} · 缓存 ${formatUnit(m.cached_tokens)} · 输出 ${formatUnit(m.output_tokens)}`;
+    }
+
+    const subRight = document.createElement('span');
+    subRight.innerText = `${m.turns || 0} ${t.turns}`;
+
+    sub.appendChild(subLeft);
+    sub.appendChild(subRight);
+
+    row.appendChild(top);
+    row.appendChild(barBg);
+    row.appendChild(sub);
+    listEl.appendChild(row);
+  });
 }
 
 // ==================== Heatmap Logic ====================

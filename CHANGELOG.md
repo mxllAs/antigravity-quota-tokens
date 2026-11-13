@@ -3,6 +3,19 @@
 本文档记录 **Antigravity Quota & Token Monitor** 扩展的所有重要版本更新。  
 本格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，并遵循 [语义化版本规范 (SemVer)](https://semver.org/lang/zh-CN/)。
 
+## [1.4.5] - 2026-11-13
+
+### ✨ 新增功能：本周期各模型消耗分析 (Weekly Cycle Consumption by Model)
+* **新增「本周期各模型消耗」可视化大盘卡片**（[index.html](src/views/index.html) / [app.js](src/views/app.js) / [style.css](src/views/style.css)）：
+  * 自动将同一模型的不同思考档位（`Low` / `Medium` / `High` / `XHigh`）去重合并为单一模型条目（如 `Gemini 4 Argon`、`Gemini 4 Hydrogen`、`Gemini 3.8 Flash`、`Claude Sonnet 5.5` 等），清晰展示本周期累计消耗、占条比例、新鲜输入 / 缓存 / 输出明细与轮次。
+  * 支持**「总 Token / 非缓存 I/O」**一键切换口径，方便对照不同模型实际消耗的官方周额度占比。
+  * 同步在**复制 Markdown 报告**（[extension.js](extension.js)）中附加当前周期各模型消耗明细，支持完整中英文界面与深浅主题。
+* **逐轮（Turn-level）精准模型归因与三池独立重置窗口对齐**（[token_collector.py](src/token_collector.py) / [token_archive.js](src/token_archive.js)）：
+  * 从会话数据库 `gen_metadata` 单轮记录提取当轮真实模型及精确秒级时间戳，即使同一会话内中途切换模型也能精准拆分统计，并将近 15 天按模型时间线同步持久化至 `token_history_archive.json`。
+  * 严格按 Gemini 常规池、Gemini 4 Argon 独立池、Claude & GPT 池各自官方 `weekly.reset_time` 往前推 7 天计算活跃周周期（离线时自动回退近 7 天估算）。
+
+---
+
 ## [1.4.4] - 2026-11-13
 
 ### 🚀 新增模型适配与精准归因修复 (New Models & Attribution Fixes)
