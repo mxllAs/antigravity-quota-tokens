@@ -291,6 +291,63 @@
     </div>
   </div>
 
+  <!-- Section 3.5: agy-cli Context Compaction Threshold -->
+  <div class="section-title">
+    <span id="lblCliContext">agy-cli 上下文压缩阈值</span>
+    <span class="cli-only-badge" id="cliOnlyBadge">仅 agy-cli 生效</span>
+  </div>
+  <div class="card cli-context-card" id="cardCliContext">
+    <div class="cli-context-header">
+      <span class="cli-context-current" id="cliContextCurrentLabel">当前阈值: 256K</span>
+      <span class="cli-context-multiplier is-default" id="cliContextMultiplierBadge">官方默认 · 1x 额度/轮</span>
+    </div>
+
+    <div class="cli-slider-box">
+      <div class="cli-slider-track-wrap">
+        <div class="cli-slider-track-bg">
+          <div class="cli-slider-track-fill" id="cliSliderFill" style="width: 0%;"></div>
+        </div>
+        <div class="cli-slider-ticks" aria-hidden="true">
+          <span class="cli-tick-dot active" data-index="0"></span>
+          <span class="cli-tick-dot" data-index="1"></span>
+          <span class="cli-tick-dot" data-index="2"></span>
+        </div>
+        <input
+          type="range"
+          min="0"
+          max="2"
+          step="1"
+          value="0"
+          id="cliContextSlider"
+          class="cli-context-range"
+          aria-label="agy-cli 上下文压缩阈值"
+        />
+      </div>
+      <div class="cli-slider-stops" id="cliSliderStops">
+        <button type="button" class="cli-stop-btn active" data-preset="256K" data-index="0">
+          <span class="cli-stop-val">256K</span>
+          <span class="cli-stop-sub" id="lblStopDefault">默认 · 1x</span>
+        </button>
+        <button type="button" class="cli-stop-btn" data-preset="512K" data-index="1">
+          <span class="cli-stop-val">512K</span>
+          <span class="cli-stop-sub" id="lblStop512">约 1.3x 额度</span>
+        </button>
+        <button type="button" class="cli-stop-btn" data-preset="900K" data-index="2">
+          <span class="cli-stop-val">900K</span>
+          <span class="cli-stop-sub" id="lblStop900">约 1.8x 额度</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="cli-context-note" id="cliContextNote">
+      ⚠️ 说明：目前仅对 <strong>agy-cli</strong> 生效（读写 <code>~/.gemini/antigravity-cli/settings.json</code>）。作用是调节触发上下文自动压缩的阈值：官方默认 <strong>256K</strong>，调节到 <strong>512K</strong>（约 1.3x）以及 <strong>900K</strong>（约 1.8x）后会减少压缩频率，但同时会显著增加每轮额度消耗。
+    </div>
+
+    <div class="cli-context-meta" id="cliContextMeta">
+      <span id="cliContextStatusText">settings.json: 使用官方默认 (256K)</span>
+    </div>
+  </div>
+
   <!-- Section 4: Projects & Drill-down Sessions -->
   <div class="section-title">
     <span id="lblHistory">历史项目与会话明细</span>

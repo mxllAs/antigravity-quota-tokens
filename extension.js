@@ -7,6 +7,7 @@ const { getWebviewHtml } = require('./src/webview_ui');
 const { deleteSessionFiles, deleteProjectSessions } = require('./src/session_cleaner');
 const { getArchivePath, mergeScanWithArchive, exportDataForSync, computeWeeklyModelUsage } = require('./src/token_archive');
 const { pushTokenStatsToRemote } = require('./src/sync_client');
+const { readCliContextWindow, writeCliContextWindow } = require('./src/cli_settings');
 
 let statusBarItem;
 let autoRefreshTimer = null;
@@ -561,6 +562,29 @@ class QuotaWebviewViewProvider {
         } else {
           await triggerRemoteSync(false);
         }
+      } else if (data.command === 'setCliContextWindow') {
+        const lang = getEffectiveLanguage();
+        try {
+          const updated = writeCliContextWindow(data.contextWindow);
+          webviewView.webview.postMessage({
+            type: 'cliContextWindow',
+            cliContextWindow: updated,
+            saved: true,
+          });
+        } catch (err) {
+          const errMsg = err && err.message ? err.message : String(err);
+          vscode.window.showErrorMessage(
+            lang === 'zh'
+              ? `更新 agy-cli 上下文压缩阈值失败: ${errMsg}`
+              : `Failed to update agy-cli contextWindow: ${errMsg}`
+          );
+          webviewView.webview.postMessage({
+            type: 'cliContextWindow',
+            cliContextWindow: readCliContextWindow(),
+            saved: false,
+            error: errMsg,
+          });
+        }
       }
     });
 
@@ -580,6 +604,7 @@ class QuotaWebviewViewProvider {
         quota: lastQuotaData,
         tokens: lastTokenData,
         lang: getEffectiveLanguage(),
+        cliContextWindow: readCliContextWindow(),
       });
     }
   }

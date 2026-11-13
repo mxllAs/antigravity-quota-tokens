@@ -84,6 +84,22 @@ const I18N = {
     weeklyPoolGemini4: 'Argon 周池',
     weeklyPoolClaude: 'Claude 池',
     weeklyEstimatedTag: '近7天',
+    secCliContext: 'agy-cli 上下文压缩阈值',
+    cliOnlyBadge: '仅 agy-cli 生效',
+    cliCurrentPrefix: '当前阈值: ',
+    cliMultiplier256: '官方默认 · 1x 额度/轮',
+    cliMultiplier512: '约 1.3x 额度消耗/轮',
+    cliMultiplier900: '约 1.8x 额度消耗/轮',
+    cliStopDefault: '默认 · 1x',
+    cliStop512: '约 1.3x 额度',
+    cliStop900: '约 1.8x 额度',
+    cliNoteHtml:
+      '⚠️ 说明：目前仅对 <strong>agy-cli</strong> 生效（读写 <code>~/.gemini/antigravity-cli/settings.json</code>），Antigravity IDE 暂不受此项控制。作用是调节触发上下文自动压缩的阈值：官方默认 <strong>256K</strong>，调节到 <strong>512K</strong> 以及 <strong>900K</strong> 后会增加每轮额度消耗。',
+    cliStatusDefault: '已使用官方默认 (256K，未写入覆写字段)',
+    cliStatusWritten: '已写入配置: ',
+    cliStatusMissing: '首次切换将创建: ',
+    cliStatusError: '读取失败: ',
+    cliSavedToast: '已将 agy-cli 上下文压缩阈值设为 ',
   },
   en: {
     topTitle: '⚡ Real-time Quota & Usage',
@@ -159,12 +175,29 @@ const I18N = {
     weeklyPoolGemini4: 'Argon',
     weeklyPoolClaude: 'Claude',
     weeklyEstimatedTag: '7d',
+    secCliContext: 'agy-cli Compaction Threshold',
+    cliOnlyBadge: 'agy-cli only',
+    cliCurrentPrefix: 'Current: ',
+    cliMultiplier256: 'Official Default · 1x quota/turn',
+    cliMultiplier512: '~1.3x quota/turn',
+    cliMultiplier900: '~1.8x quota/turn',
+    cliStopDefault: 'Default · 1x',
+    cliStop512: '~1.3x quota',
+    cliStop900: '~1.8x quota',
+    cliNoteHtml:
+      '⚠️ Note: Applies to <strong>agy-cli</strong> only (writes <code>~/.gemini/antigravity-cli/settings.json</code>; Antigravity IDE is not affected). Controls the context compaction trigger threshold: official default is <strong>256K</strong>; raising to <strong>512K</strong> or <strong>900K</strong> increases quota usage per turn.',
+    cliStatusDefault: 'Using official default (256K, key omitted)',
+    cliStatusWritten: 'Saved in config: ',
+    cliStatusMissing: 'Will create on change: ',
+    cliStatusError: 'Read error: ',
+    cliSavedToast: 'agy-cli compaction threshold set to ',
   },
 };
 
 let currentLang = 'zh';
 let lastQuota = null;
 let lastTokens = null;
+let lastCliContextWindow = { contextWindow: '256K', fileExists: true, settingsPath: '~/.gemini/antigravity-cli/settings.json', error: null };
 let weeklyMetricMode = 'total';
 
 function formatUnit(num) {
@@ -284,6 +317,20 @@ function applyI18n() {
     lblMode.innerText =
       weeklyMetricMode === 'effective' ? t.weeklyModeEffective : t.weeklyModeTotal;
   }
+
+  const lblCliCtx = document.getElementById('lblCliContext');
+  if (lblCliCtx) lblCliCtx.innerText = t.secCliContext;
+  const cliOnlyBadge = document.getElementById('cliOnlyBadge');
+  if (cliOnlyBadge) cliOnlyBadge.innerText = t.cliOnlyBadge;
+  const lblStopDefault = document.getElementById('lblStopDefault');
+  if (lblStopDefault) lblStopDefault.innerText = t.cliStopDefault;
+  const lblStop512 = document.getElementById('lblStop512');
+  if (lblStop512) lblStop512.innerText = t.cliStop512;
+  const lblStop900 = document.getElementById('lblStop900');
+  if (lblStop900) lblStop900.innerText = t.cliStop900;
+  const cliNote = document.getElementById('cliContextNote');
+  if (cliNote) cliNote.innerHTML = t.cliNoteHtml;
+  renderCliContextWindow(lastCliContextWindow);
 }
 
 // Refresh action
@@ -344,8 +391,20 @@ window.addEventListener('message', (event) => {
     }
     lastQuota = msg.quota;
     lastTokens = msg.tokens;
+    if (msg.cliContextWindow) {
+      lastCliContextWindow = msg.cliContextWindow;
+    }
     applyI18n();
     renderData(msg.quota, msg.tokens);
+  } else if (msg.type === 'cliContextWindow') {
+    if (msg.cliContextWindow) {
+      lastCliContextWindow = msg.cliContextWindow;
+      renderCliContextWindow(lastCliContextWindow);
+    }
+    if (msg.saved && msg.cliContextWindow) {
+      const t = I18N[currentLang] || I18N.zh;
+      showToast(t.cliSavedToast + msg.cliContextWindow.contextWindow);
+    }
   }
 });
 
@@ -1226,6 +1285,118 @@ function renderProjectsWithSessions(projects, currentProj) {
     container.appendChild(card);
   });
 }
+
+// ==================== agy-cli Context Compaction Slider ====================
+const CLI_CONTEXT_PRESETS = ['256K', '512K', '900K'];
+
+function renderCliContextWindow(info) {
+  const t = I18N[currentLang] || I18N.zh;
+  const preset =
+    info && CLI_CONTEXT_PRESETS.includes(info.contextWindow)
+      ? info.contextWindow
+      : '256K';
+  const idx = CLI_CONTEXT_PRESETS.indexOf(preset);
+
+  const slider = document.getElementById('cliContextSlider');
+  const fill = document.getElementById('cliSliderFill');
+  const curLabel = document.getElementById('cliContextCurrentLabel');
+  const badge = document.getElementById('cliContextMultiplierBadge');
+  const statusEl = document.getElementById('cliContextStatusText');
+
+  if (slider) {
+    slider.value = String(idx);
+    slider.classList.toggle('is-warn', preset === '512K');
+    slider.classList.toggle('is-heavy', preset === '900K');
+  }
+
+  if (fill) {
+    fill.style.width = idx * 50 + '%';
+    fill.classList.toggle('is-warn', preset === '512K');
+    fill.classList.toggle('is-heavy', preset === '900K');
+  }
+
+  document.querySelectorAll('.cli-tick-dot').forEach((dot) => {
+    const dotIdx = Number(dot.getAttribute('data-index'));
+    dot.classList.toggle('active', dotIdx <= idx);
+  });
+
+  document.querySelectorAll('.cli-stop-btn').forEach((btn) => {
+    btn.classList.toggle('active', btn.getAttribute('data-preset') === preset);
+  });
+
+  if (curLabel) {
+    curLabel.innerText = t.cliCurrentPrefix + preset;
+  }
+
+  if (badge) {
+    badge.classList.remove('is-default', 'is-warn', 'is-heavy');
+    if (preset === '512K') {
+      badge.classList.add('is-warn');
+      badge.innerText = t.cliMultiplier512;
+    } else if (preset === '900K') {
+      badge.classList.add('is-heavy');
+      badge.innerText = t.cliMultiplier900;
+    } else {
+      badge.classList.add('is-default');
+      badge.innerText = t.cliMultiplier256;
+    }
+  }
+
+  if (statusEl) {
+    const shortPath =
+      (info && info.settingsPath) || '~/.gemini/antigravity-cli/settings.json';
+    if (info && info.error) {
+      statusEl.innerText = t.cliStatusError + info.error;
+    } else if (info && info.fileExists === false) {
+      statusEl.innerText = t.cliStatusMissing + shortPath;
+    } else if (preset === '256K' && (!info || !info.rawValue)) {
+      statusEl.innerText = t.cliStatusDefault;
+    } else {
+      statusEl.innerText = t.cliStatusWritten + shortPath + ' ("contextWindow": "' + preset + '")';
+    }
+  }
+}
+
+function commitCliContextWindow(preset) {
+  if (!CLI_CONTEXT_PRESETS.includes(preset)) return;
+  lastCliContextWindow = {
+    ...(lastCliContextWindow || {}),
+    contextWindow: preset,
+    rawValue: preset === '256K' ? null : preset,
+    fileExists: true,
+    error: null,
+  };
+  renderCliContextWindow(lastCliContextWindow);
+  vscode.postMessage({
+    command: 'setCliContextWindow',
+    contextWindow: preset,
+  });
+}
+
+(function bindCliContextSlider() {
+  const slider = document.getElementById('cliContextSlider');
+  if (slider) {
+    slider.addEventListener('input', () => {
+      const idx = Math.max(0, Math.min(2, Number(slider.value) || 0));
+      const preset = CLI_CONTEXT_PRESETS[idx] || '256K';
+      renderCliContextWindow({
+        ...(lastCliContextWindow || {}),
+        contextWindow: preset,
+      });
+    });
+    slider.addEventListener('change', () => {
+      const idx = Math.max(0, Math.min(2, Number(slider.value) || 0));
+      commitCliContextWindow(CLI_CONTEXT_PRESETS[idx] || '256K');
+    });
+  }
+
+  document.querySelectorAll('.cli-stop-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const preset = btn.getAttribute('data-preset');
+      if (preset) commitCliContextWindow(preset);
+    });
+  });
+})();
 
 // Ready handshake
 vscode.postMessage({ command: 'ready' });
