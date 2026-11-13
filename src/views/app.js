@@ -334,6 +334,15 @@ function renderData(quota, tokens) {
     // 2. Quotas (Gemini Pool & Claude/GPT Pool)
     if (quota.gemini) {
       const g = quota.gemini;
+      const gHint = document.getElementById('geminiModelsHint');
+      if (gHint && g.models_hint) {
+        gHint.innerText =
+          currentLang === 'en'
+            ? g.models_hint
+                .replace('原生 1M 超长上下文 (104.8 万 tokens)', t.geminiHint)
+                .replace('1M 上下文', '1M Context')
+            : g.models_hint;
+      }
       const fiveH = g.five_hour || g;
       document.getElementById('geminiPct').innerText =
         fiveH.remaining_pct + '%';
@@ -377,11 +386,19 @@ function renderData(quota, tokens) {
         const weekly = g4.weekly;
         if (g4.label) {
           const lblG4 = document.getElementById('lblGemini4Pool');
-          if (lblG4) lblG4.innerText = g4.label;
+          if (lblG4) {
+            lblG4.innerText =
+              currentLang === 'en' ? g4.label.replace(' 额度池', ' Pool') : g4.label;
+          }
         }
         if (g4.models_hint) {
           const g4Hint = document.getElementById('gemini4ModelsHint');
-          if (g4Hint) g4Hint.innerText = g4.models_hint;
+          if (g4Hint) {
+            g4Hint.innerText =
+              currentLang === 'en'
+                ? g4.models_hint.replace(' 独立周额度 · 1M 超长上下文', ' Weekly Limit · 1M Context')
+                : g4.models_hint;
+          }
         }
         document.getElementById('gemini4Pct').innerText = weekly.remaining_pct + '%';
         document.getElementById('gemini4Bar').style.width = weekly.remaining_pct + '%';

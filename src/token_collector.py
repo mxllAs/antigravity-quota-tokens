@@ -137,6 +137,30 @@ def extract_session_title(cur):
         pass
     return ''
 
+PLACEHOLDER_MODEL_MAP = {
+    'MODEL_PLACEHOLDER_M525': ('gemini-4-hydrogen-high', 'Gemini 4 Hydrogen', 1048576, '1M'),
+    'MODEL_PLACEHOLDER_M526': ('gemini-4-hydrogen-medium', 'Gemini 4 Hydrogen', 1048576, '1M'),
+    'MODEL_PLACEHOLDER_M527': ('gemini-4-hydrogen-low', 'Gemini 4 Hydrogen', 1048576, '1M'),
+    'MODEL_PLACEHOLDER_M528': ('gemini-4-hydrogen-xhigh', 'Gemini 4 Hydrogen', 1048576, '1M'),
+    'MODEL_PLACEHOLDER_M668': ('gemini-pro-orchestrator-g1-pro', 'Orchestrator (Argon)', 1048576, '1M'),
+    'MODEL_PLACEHOLDER_M669': ('gemini-pro-orchestrator-g1-pro', 'Orchestrator (Argon)', 1048576, '1M'),
+    'MODEL_PLACEHOLDER_M417': ('gemini-4-argon-high', 'Gemini 4 Argon', 1048576, '1M'),
+    'MODEL_PLACEHOLDER_M418': ('gemini-4-argon-medium', 'Gemini 4 Argon', 1048576, '1M'),
+    'MODEL_PLACEHOLDER_M419': ('gemini-4-argon-low', 'Gemini 4 Argon', 1048576, '1M'),
+    'MODEL_PLACEHOLDER_M670': ('gemini-4-carbon', 'Gemini 4 Carbon', 1048576, '1M'),
+    'MODEL_PLACEHOLDER_M400': ('claude-opus-5-5', 'Claude Opus 5.5', 1000000, '1M'),
+    'MODEL_PLACEHOLDER_M401': ('claude-opus-5-5', 'Claude Opus 5.5', 1000000, '1M'),
+    'MODEL_PLACEHOLDER_M402': ('claude-opus-5-5', 'Claude Opus 5.5', 1000000, '1M'),
+    'MODEL_PLACEHOLDER_M403': ('claude-sonnet-5-5', 'Claude Sonnet 5.5', 1000000, '1M'),
+    'MODEL_PLACEHOLDER_M404': ('claude-sonnet-5-5', 'Claude Sonnet 5.5', 1000000, '1M'),
+    'MODEL_PLACEHOLDER_M405': ('claude-sonnet-5-5', 'Claude Sonnet 5.5', 1000000, '1M'),
+    'MODEL_PLACEHOLDER_M318': ('gemini-3.8-flash-high', 'Gemini 3.8 Flash', 1048576, '1M'),
+    'MODEL_PLACEHOLDER_M319': ('gemini-3.8-flash-medium', 'Gemini 3.8 Flash', 1048576, '1M'),
+    'MODEL_PLACEHOLDER_M320': ('gemini-3.8-flash-low', 'Gemini 3.8 Flash', 1048576, '1M'),
+    'MODEL_PLACEHOLDER_M26': ('claude-opus-4-6', 'Claude Opus 4.6', 200000, '200k'),
+    'MODEL_PLACEHOLDER_M35': ('claude-sonnet-4-6', 'Claude Sonnet 4.6', 200000, '200k'),
+}
+
 def normalize_model_specs(raw):
     raw_lower = (raw or '').lower().strip()
     if 'claude' in raw_lower:
@@ -178,10 +202,39 @@ def normalize_model_specs(raw):
             'context_label': '128k'
         }
 
+    raw_clean = (raw or '').strip()
+    raw_upper = raw_clean.upper()
+    if raw_upper in PLACEHOLDER_MODEL_MAP:
+        mid, mname, ctx_win, ctx_lbl = PLACEHOLDER_MODEL_MAP[raw_upper]
+        return {
+            'id': mid,
+            'name': mname,
+            'context_window': ctx_win,
+            'context_label': ctx_lbl
+        }
+
+    # Orchestrator (Argon) - check before 'pro' and 'argon'/'gemini'
+    if 'orchestrator' in raw_lower:
+        return {
+            'id': raw_clean or 'gemini-pro-orchestrator-g1-pro',
+            'name': 'Orchestrator (Argon)',
+            'context_window': 1048576,
+            'context_label': '1M'
+        }
+
+    # Gemini 4 Hydrogen - check before generic 'gemini-4'
+    if 'hydrogen' in raw_lower:
+        return {
+            'id': raw_clean or 'gemini-4-hydrogen',
+            'name': 'Gemini 4 Hydrogen',
+            'context_window': 1048576,
+            'context_label': '1M'
+        }
+
     # Gemini 4 Carbon
     if 'carbon' in raw_lower:
         return {
-            'id': raw or 'gemini-4-carbon',
+            'id': raw_clean or 'gemini-4-carbon',
             'name': 'Gemini 4 Carbon',
             'context_window': 1048576,
             'context_label': '1M'
@@ -190,7 +243,7 @@ def normalize_model_specs(raw):
     # Gemini 4 Argon
     if 'argon' in raw_lower or 'gemini-4' in raw_lower or 'gemini 4' in raw_lower:
         return {
-            'id': raw or 'gemini-4-argon',
+            'id': raw_clean or 'gemini-4-argon',
             'name': 'Gemini 4 Argon',
             'context_window': 1048576,
             'context_label': '1M'
@@ -207,31 +260,53 @@ def normalize_model_specs(raw):
     elif '3.1' in raw_lower or 'pro' in raw_lower:
         name = 'Gemini 3.1 Pro'
     return {
-        'id': raw or 'gemini-3.8-flash-high',
+        'id': raw_clean or 'gemini-3.8-flash-high',
         'name': name,
         'context_window': 1048576,
         'context_label': '1M'
     }
 
 def extract_session_model(cur):
-    """Detects active model used in the session from executor_metadata or gen_metadata"""
+    """Detects active model used in the session from per-turn gen_metadata or executor_metadata"""
     try:
         import re
-        pattern = r'(?:gemini-[a-zA-Z0-9\.\-]+|claude-[a-zA-Z0-9\.\-]+|gpt-[a-zA-Z0-9\.\-]+)'
-        rows = cur.execute('SELECT data FROM executor_metadata ORDER BY idx DESC LIMIT 10').fetchall()
+        slug_pattern = r'(?:gemini-[a-zA-Z0-9\.\-]+|claude-[a-zA-Z0-9\.\-]+|gpt-[a-zA-Z0-9\.\-]+)'
+        placeholder_pattern = r'MODEL_PLACEHOLDER_M\d+'
+        # Large metadata blobs (executor_metadata / userStatus dumps) start with internal helper models
+        utility_helpers = {
+            'gemini-3.8-flash-low',
+            'gemini-3.5-flash-lite',
+            'gemini-3.8-flash-tiered',
+            'gemini-3.1-flash-lite',
+        }
+
+        # 1. Prefer small per-turn gen_metadata rows (<50KB) which store only the active turn model & enum
+        rows = cur.execute('SELECT data FROM gen_metadata WHERE length(data) < 50000 ORDER BY idx DESC LIMIT 10').fetchall()
         for r in rows:
             if r[0]:
                 txt = r[0].decode('latin-1', errors='ignore')
-                found = re.findall(pattern, txt)
+                for ph in re.findall(placeholder_pattern, txt):
+                    if ph in PLACEHOLDER_MODEL_MAP:
+                        return normalize_model_specs(ph)
+                found = [m for m in re.findall(slug_pattern, txt) if m.lower() not in {'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-3.8-flash-tiered'}]
                 if found:
                     return normalize_model_specs(found[0])
-        rows = cur.execute('SELECT data FROM gen_metadata ORDER BY idx DESC LIMIT 10').fetchall()
-        for r in rows:
-            if r[0]:
-                txt = r[0].decode('latin-1', errors='ignore')
-                found = re.findall(pattern, txt)
-                if found:
-                    return normalize_model_specs(found[0])
+
+        # 2. Fallback: larger gen_metadata / executor_metadata, skipping internal utility helper IDs first
+        fallback_helper = None
+        for table in ('gen_metadata', 'executor_metadata'):
+            rows = cur.execute(f'SELECT data FROM {table} ORDER BY idx DESC LIMIT 10').fetchall()
+            for r in rows:
+                if r[0]:
+                    txt = r[0].decode('latin-1', errors='ignore')
+                    found = re.findall(slug_pattern, txt)
+                    for m in found:
+                        if m.lower() not in utility_helpers:
+                            return normalize_model_specs(m)
+                        if fallback_helper is None:
+                            fallback_helper = m
+        if fallback_helper:
+            return normalize_model_specs(fallback_helper)
     except Exception:
         pass
     return normalize_model_specs('gemini-3.8-flash-high')

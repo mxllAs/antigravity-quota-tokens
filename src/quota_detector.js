@@ -334,7 +334,7 @@ function parseQuota(status, quotaSummary) {
     const dName = g.displayName || '';
     if (/carbon/i.test(dName)) {
       gemini4Summary = parseBucketGroup(g);
-    } else if (/gemini\s*4|argon/i.test(dName)) {
+    } else if (/argon/i.test(dName)) {
       gemini4Summary = parseBucketGroup(g);
     } else if (/gemini/i.test(dName)) {
       geminiSummary = parseBucketGroup(g);
@@ -361,9 +361,10 @@ function parseQuota(status, quotaSummary) {
   const hasClaudeGroup = !!claudeSummary;
   const has_claude = hasClaudeGroup || hasClaudeModel;
 
-  const hasGemini4Model = configs.some((m) =>
-    /gemini\s*4|argon|carbon/i.test(m.label || m.modelId || '') &&
-    m.tagTitle !== 'Unavailable'
+  const hasGemini4Model = configs.some(
+    (m) =>
+      /(?:argon|carbon)/i.test(m.label || m.modelId || '') &&
+      m.tagTitle !== 'Unavailable'
   );
   const has_gemini4 = !!gemini4Summary || hasGemini4Model;
 
@@ -420,34 +421,49 @@ function parseQuota(status, quotaSummary) {
   }
 
   // Dynamic active models identification
+  const stripTier = (lbl) =>
+    (lbl || '').replace(/\s*\((?:XHigh|High|Medium|Low)\)\s*/i, '').trim();
+
+  const collectUniqueNames = (models) => {
+    const out = [];
+    const seen = new Set();
+    for (const m of models) {
+      const clean = stripTier(m.label);
+      if (clean && !seen.has(clean)) {
+        seen.add(clean);
+        out.push(clean);
+      }
+    }
+    return out;
+  };
+
   let activeClaudeModel = 'Claude Sonnet 5.5';
   const foundClaude = clientModels.find((m) => /claude/i.test(m.label));
   if (foundClaude) {
-    activeClaudeModel = foundClaude.label
-      .replace(/\s*\((?:High|Medium|Low)\)\s*/i, '')
-      .trim();
+    activeClaudeModel = stripTier(foundClaude.label);
   }
 
-  let activeGeminiModel = 'Gemini 3.8 Flash';
-  const foundGemini = clientModels.find((m) => /gemini\s*3\.\d/i.test(m.label));
-  if (foundGemini) {
-    activeGeminiModel = foundGemini.label
-      .replace(/\s*\((?:High|Medium|Low)\)\s*/i, '')
-      .trim();
-  }
+  const availRegularGemini = clientModels.filter(
+    (m) =>
+      m.tagTitle !== 'Unavailable' && /hydrogen|gemini\s*3\.\d/i.test(m.label)
+  );
+  const regularGeminiNames = collectUniqueNames(availRegularGemini);
+  const activeGeminiModel = regularGeminiNames[0] || 'Gemini 3.8 Flash';
+  const geminiModelsHint =
+    regularGeminiNames.length > 0
+      ? `${regularGeminiNames.join(' · ')} · 1M 上下文`
+      : '原生 1M 超长上下文 (104.8 万 tokens)';
 
-  let activeGemini4Model = 'Gemini 4 Argon';
+  const availG4 = clientModels.filter(
+    (m) => /(?:argon|carbon)/i.test(m.label) && m.tagTitle !== 'Unavailable'
+  );
   const foundGemini4 =
-    clientModels.find(
-      (m) =>
-        /gemini\s*4|argon|carbon/i.test(m.label) && m.tagTitle !== 'Unavailable'
-    ) ||
-    clientModels.find((m) => /gemini\s*4|argon|carbon/i.test(m.label));
-  if (foundGemini4) {
-    activeGemini4Model = foundGemini4.label
-      .replace(/\s*\((?:High|Medium|Low)\)\s*/i, '')
-      .trim();
-  }
+    availG4.find((m) => /gemini\s*4\s*(?:argon|carbon)/i.test(m.label)) ||
+    availG4[0] ||
+    clientModels.find((m) => /gemini\s*4\s*(?:argon|carbon)/i.test(m.label));
+  const gemini4Names = collectUniqueNames([foundGemini4, ...availG4].filter(Boolean));
+  const activeGemini4Model = gemini4Names[0] || 'Gemini 4 Argon';
+  const gemini4ModelsHint = `${(gemini4Names.length ? gemini4Names : [activeGemini4Model]).join(' · ')} 独立周额度 · 1M 超长上下文`;
 
   const rawTierName = status?.userTier?.name || 'Google AI Pro';
   const tier_type = !has_claude ? 'pro_promo' : 'pro_paid';
@@ -471,7 +487,7 @@ function parseQuota(status, quotaSummary) {
     gemini: geminiSummary
       ? {
           label: 'Gemini 额度池',
-          models_hint: '原生 1M 超长上下文 (104.8 万 tokens)',
+          models_hint: geminiModelsHint,
           context_window: 1048576,
           context_label: '1M',
           active_model: activeGeminiModel,
@@ -493,7 +509,7 @@ function parseQuota(status, quotaSummary) {
       has_gemini4 && gemini4Summary
         ? {
             label: `${activeGemini4Model} 额度池`,
-            models_hint: `${activeGemini4Model} 独立周额度 · 1M 超长上下文`,
+            models_hint: gemini4ModelsHint,
             context_window: 1048576,
             context_label: '1M',
             active_model: activeGemini4Model,

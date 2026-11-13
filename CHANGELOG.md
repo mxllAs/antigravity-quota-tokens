@@ -3,6 +3,17 @@
 本文档记录 **Antigravity Quota & Token Monitor** 扩展的所有重要版本更新。  
 本格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，并遵循 [语义化版本规范 (SemVer)](https://semver.org/lang/zh-CN/)。
 
+## [1.4.4] - 2026-11-13
+
+### 🚀 新增模型适配与精准归因修复 (New Models & Attribution Fixes)
+* **全面支持 `Gemini 4 Hydrogen` 与 `Orchestrator (Argon)` 新模型**：
+  * 精准区分模型配额归属：`Gemini 4 Hydrogen`（Low/Medium/High/XHigh）归入常规 **Gemini 额度池**（消耗 5h + 周额度）并在卡片提示中动态展示；`Orchestrator (Argon)` 归入 **Gemini 4 Argon 独立周额度池**，彻底避免将 `Gemini 4 Hydrogen` 误判为独立周额度池。
+  * 在 `token_collector.py` 中新增 Protobuf 枚举占位符映射表（`MODEL_PLACEHOLDER_M525`~`M528`、`M668`~`M669`、`M417`~`M419`、`M670`、`M400`~`M405`、`M318`~`M320` 等）及最新模型名称归一化逻辑。
+* **修复会话活跃模型被辅助模型覆盖的问题 (`extract_session_model`)**：
+  * 优先读取会话数据库 `gen_metadata` 中的单轮轻量记录（`<50KB`），避免直接命中 `executor_metadata` 或全量状态包开头的内部辅助模型（如 `gemini-3.8-flash-low`、`gemini-3.5-flash-lite`），确保历史会话列表准确显示 `Gemini 4 Hydrogen`、`Orchestrator (Argon)`、`Gemini 4 Argon` 等实际使用的模型与 `1M` 上下文规格。
+
+---
+
 ## [1.4.3] - 2026-11-12
 
 ### 🚀 架构优化与前瞻支持 (Improvements & Upcoming Support)
