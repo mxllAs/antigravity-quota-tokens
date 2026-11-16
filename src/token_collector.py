@@ -622,9 +622,14 @@ def collect_tokens(target_date=None, target_workspace=""):
                     }
                     summary["project_sessions"][project_name].append(sess_item)
                     if is_current_workspace:
-                        summary["current_project"]["session_list"].append(sess_item)
+                        # Slim copy for current_project / current_session avoids re-serializing large per-turn timelines
+                        slim_sess_item = {
+                            k: v for k, v in sess_item.items()
+                            if k not in ("recent_model_usage", "daily")
+                        }
+                        summary["current_project"]["session_list"].append(slim_sess_item)
                         if active_session is None or db_mtime > active_session["mtime"]:
-                            active_session = sess_item
+                            active_session = slim_sess_item
 
                 if session_has_today:
                     summary["today"]["sessions"] += 1
@@ -698,7 +703,7 @@ def main():
     args = parser.parse_args()
 
     result = collect_tokens(target_date=args.date, target_workspace=args.workspace)
-    print(json.dumps(result, ensure_ascii=False))
+    print(json.dumps(result, ensure_ascii=False, separators=(",", ":")))
 
 if __name__ == "__main__":
     main()

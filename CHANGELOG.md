@@ -3,6 +3,23 @@
 本文档记录 **Antigravity Quota & Token Monitor** 扩展的所有重要版本更新。  
 本格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，并遵循 [语义化版本规范 (SemVer)](https://semver.org/lang/zh-CN/)。
 
+## [1.4.7] - 2026-11-16
+
+### ✨ 新增功能：agy-cli 上下文压缩阈值调节卡片 (agy-cli Context Compaction Threshold)
+* **在热力图下方新增 `agy-cli` 上下文压缩阈值三档滑块**（[cli_settings.js](src/cli_settings.js) / [index.html](src/views/index.html) / [app.js](src/views/app.js) / [style.css](src/views/style.css) / [extension.js](extension.js)）：
+  * 支持一键拖动或点击切换 **`256K`（官方默认 · 1x） / `512K`（约 1.3x 额度消耗） / `900K`（约 1.8x 额度消耗）** 三档预设。
+  * 直接读写 `~/.gemini/antigravity-cli/settings.json` 中的 `"contextWindow"` 字段并完整保留已有配置项；恢复默认 `256K` 时自动移除覆写字段。
+  * 卡片内明确标注**仅对 `agy-cli` 生效**（IDE 端暂不受此项控制）以及调高阈值后对每轮额度消耗的影响，支持完整中英文切换与深浅主题适配。
+
+### 🐛 问题修复：大项目 Token 采集 `maxBuffer` 溢出与本地时区对齐
+* **修复高轮次工作区下 `今日 Token 消耗` 与 `本周期各模型消耗` 静默归零 / 丢失的问题**（[extension.js](extension.js) / [token_collector.py](src/token_collector.py)）：
+  * 当会话轮次较多（例如单会话突破千轮）时，`token_collector.py` 原始 stdout 体积超过 Node.js `execFile` 默认 `1 MiB` `maxBuffer` 限制导致采集失败并静默回退旧存档。现已将 `maxBuffer` 提升至 `64 MiB`（`timeout` 提升至 `15s`），并增加错误警告日志。
+  * 优化 [token_collector.py](src/token_collector.py)：在 `current_project` 与 `current_session` 副本中剔除重复的 `recent_model_usage` 与 `daily` 冗余数据并启用紧凑 JSON 输出，使大工作区采集输出体积大幅缩减约 42%。
+* **修复跨午夜 UTC/本地日期偏差**（[token_archive.js](src/token_archive.js)）：
+  * 将 `mergeScanWithArchive` 的默认 `targetDate` 从 UTC 日期（`toISOString().slice(0, 10)`）改为本地时区日期 `getLocalDateStr()`，与采集器保持一致，避免凌晨 0:00–8:00（UTC+8）统计错位。
+
+---
+
 ## [1.4.5] - 2026-11-13
 
 ### ✨ 新增功能：本周期各模型消耗分析 (Weekly Cycle Consumption by Model)

@@ -155,18 +155,27 @@ function runTokenCollector(pythonBin, workspacePath) {
       args.push('--workspace', workspacePath);
     }
 
-    execFile(pythonBin, args, { timeout: 8000 }, (error, stdout) => {
-      if (error || !stdout) {
-        resolve(null);
-        return;
+    execFile(
+      pythonBin,
+      args,
+      { timeout: 15000, maxBuffer: 64 * 1024 * 1024 },
+      (error, stdout) => {
+        if (error || !stdout) {
+          if (error) {
+            console.warn('[Antigravity Quota] token_collector error:', error.message);
+          }
+          resolve(null);
+          return;
+        }
+        try {
+          const data = JSON.parse(stdout.trim());
+          resolve(data);
+        } catch (e) {
+          console.warn('[Antigravity Quota] token_collector JSON parse error:', e.message);
+          resolve(null);
+        }
       }
-      try {
-        const data = JSON.parse(stdout.trim());
-        resolve(data);
-      } catch (e) {
-        resolve(null);
-      }
-    });
+    );
   });
 }
 
