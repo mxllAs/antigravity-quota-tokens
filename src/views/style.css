@@ -251,6 +251,20 @@
       border: 1px solid rgba(16, 185, 129, 0.3);
     }
 
+    .account-tier.tier-ultra {
+      background: linear-gradient(135deg, rgba(168, 85, 247, 0.18), rgba(245, 158, 11, 0.18));
+      color: #b45309;
+      border: 1px solid rgba(245, 158, 11, 0.42);
+      font-weight: 700;
+    }
+
+    body.vscode-dark .account-tier.tier-ultra {
+      background: linear-gradient(135deg, rgba(168, 85, 247, 0.24), rgba(245, 158, 11, 0.22));
+      color: #fcd34d;
+      border: 1px solid rgba(251, 191, 36, 0.45);
+      box-shadow: 0 0 8px rgba(245, 158, 11, 0.18);
+    }
+
     /* Section Title */
     .section-title {
       font-size: 11px;

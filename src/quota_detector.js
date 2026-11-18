@@ -5,17 +5,35 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
-function detectUserAvatar() {
+function detectUserAvatar(userEmail = '') {
   try {
     const userHome = os.homedir();
     const appData =
       process.env.APPDATA || path.join(userHome, 'AppData', 'Roaming');
     const candidates = [
+      path.join(appData, 'Antigravity IDE', 'User', 'globalStorage', 'state.vscdb'),
       path.join(appData, 'Antigravity', 'User', 'globalStorage', 'state.vscdb'),
       path.join(
         userHome,
         '.config',
+        'Antigravity IDE',
+        'User',
+        'globalStorage',
+        'state.vscdb'
+      ),
+      path.join(
+        userHome,
+        '.config',
         'Antigravity',
+        'User',
+        'globalStorage',
+        'state.vscdb'
+      ),
+      path.join(
+        userHome,
+        'Library',
+        'Application Support',
+        'Antigravity IDE',
         'User',
         'globalStorage',
         'state.vscdb'
@@ -30,13 +48,23 @@ function detectUserAvatar() {
         'state.vscdb'
       ),
     ];
+    const urlRegex = /https:\/\/lh\d*\.googleusercontent\.com\/[A-Za-z0-9_\-=/]+/;
     for (const p of candidates) {
       if (fs.existsSync(p)) {
         const buf = fs.readFileSync(p);
         const text = buf.toString('latin1');
-        const match = text.match(
-          /https:\/\/lh\d*\.googleusercontent\.com\/[A-Za-z0-9_\-=/]+/
-        );
+        if (userEmail) {
+          const emailIdx = text.lastIndexOf(userEmail);
+          if (emailIdx !== -1) {
+            const slice = text.slice(
+              Math.max(0, emailIdx - 1500),
+              Math.min(text.length, emailIdx + 1500)
+            );
+            const nearMatch = slice.match(urlRegex);
+            if (nearMatch) return nearMatch[0];
+          }
+        }
+        const match = text.match(urlRegex);
         if (match) {
           return match[0];
         }
@@ -280,7 +308,11 @@ function parseQuota(status, quotaSummary) {
   const user_name = status?.name || 'User';
   const user_email = status?.email || '';
   const user_avatar =
-    detectUserAvatar() || status?.profileUrl || status?.picture || '';
+    status?.profilePictureUrl ||
+    status?.profileUrl ||
+    status?.picture ||
+    detectUserAvatar(user_email) ||
+    '';
   const tier_name = status?.userTier?.name || 'Google AI Pro';
 
   function parseBucketGroup(group) {
@@ -443,10 +475,14 @@ function parseQuota(status, quotaSummary) {
     activeClaudeModel = stripTier(foundClaude.label);
   }
 
-  const availRegularGemini = clientModels.filter(
-    (m) =>
-      m.tagTitle !== 'Unavailable' && /hydrogen|gemini\s*3\.\d/i.test(m.label)
-  );
+  const hasSeparateGemini4Pool = !!gemini4Summary;
+  const availRegularGemini = clientModels.filter((m) => {
+    if (m.tagTitle === 'Unavailable') return false;
+    if (!hasSeparateGemini4Pool) {
+      return /(?:carbon|argon|hydrogen|gemini\s*3\.\d)/i.test(m.label);
+    }
+    return /hydrogen|gemini\s*3\.\d/i.test(m.label);
+  });
   const regularGeminiNames = collectUniqueNames(availRegularGemini);
   const activeGeminiModel = regularGeminiNames[0] || 'Gemini 3.8 Flash';
   const geminiModelsHint =
@@ -466,7 +502,8 @@ function parseQuota(status, quotaSummary) {
   const gemini4ModelsHint = `${(gemini4Names.length ? gemini4Names : [activeGemini4Model]).join(' · ')} 独立周额度 · 1M 超长上下文`;
 
   const rawTierName = status?.userTier?.name || 'Google AI Pro';
-  const tier_type = !has_claude ? 'pro_promo' : 'pro_paid';
+  const isUltra = /ultra/i.test(rawTierName);
+  const tier_type = isUltra ? 'ultra' : !has_claude ? 'pro_promo' : 'pro_paid';
   const tier_display = !has_claude
     ? `${rawTierName} (活动专享)`
     : rawTierName;

@@ -3,6 +3,20 @@
 本文档记录 **Antigravity Quota & Token Monitor** 扩展的所有重要版本更新。  
 本格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，并遵循 [语义化版本规范 (SemVer)](https://semver.org/lang/zh-CN/)。
 
+## [1.4.8] - 2026-11-18
+
+### ✨ 新增功能：Google AI Ultra 满血合并池与专属样式适配
+* **完整支持 `Google AI Ultra` 账号配额池与模型展示**（[quota_detector.js](src/quota_detector.js) / [token_archive.js](src/token_archive.js) / [token_collector.py](src/token_collector.py) / [app.js](src/views/app.js) / [style.css](src/views/style.css)）：
+  * 自动识别 Ultra 账号合并配额池模式（`Gemini 4 Carbon`、`Gemini 4 Argon`、`Gemini 4 Hydrogen`、`Orchestrator (Carbon)`、`Orchestrator (Argon)`、`Gemini 3.8 Flash` 共享主池 5h + 周额度），在「Gemini 额度池」卡片中完整列出全部可用模型，并在「本周期各模型消耗」中统一归入 `Gemini 池`。
+  * 顶部账号栏新增 `Google AI Ultra` 专属紫金渐变徽标样式（`.tier-ultra`）。
+  * 补全 `Gemini 4 Carbon`（`MODEL_PLACEHOLDER_M427` / `M437` / `M438`）及 `Orchestrator (Carbon)`（`MODEL_PLACEHOLDER_M667`）等最新 Protobuf 模型枚举映射。
+
+### 🐛 问题修复：切换账号后头像不刷新的老问题
+* **修复切换 Antigravity 账号后头像始终停留在旧账号缓存的问题**（[quota_detector.js](src/quota_detector.js) / [app.js](src/views/app.js)）：
+  * 优先读取实时 `GetUserStatus` 接口返回的 `status.profilePictureUrl`（内置 base64 实时头像），替代原先排在首位且固定命中 `state.vscdb` 首条历史残留链接的扫描逻辑；同时为离线回退补充按当前邮箱邻近匹配与加载失败首字母兜底。
+
+---
+
 ## [1.4.7] - 2026-11-16
 
 ### ✨ 新增功能：agy-cli 上下文压缩阈值调节卡片 (agy-cli Context Compaction Threshold)

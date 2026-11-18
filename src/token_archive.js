@@ -630,6 +630,7 @@ function resolvePoolWindows(quota, nowMs = Date.now()) {
  */
 function computeWeeklyModelUsage(recentModelUsage, quota, nowMs = Date.now()) {
   const windows = resolvePoolWindows(quota, nowMs);
+  const isUnifiedGeminiPool = !!(quota && quota.gemini && !quota.gemini4);
   const byModel = new Map();
   let totalTokens = 0;
   let effectiveTokens = 0;
@@ -639,7 +640,8 @@ function computeWeeklyModelUsage(recentModelUsage, quota, nowMs = Date.now()) {
     for (const entry of recentModelUsage) {
       if (!entry || !entry.m) continue;
       const tsMs = (entry.t || 0) * 1000;
-      const pool = getModelPool(entry.m);
+      const rawPool = getModelPool(entry.m);
+      const pool = isUnifiedGeminiPool && rawPool === 'gemini4' ? 'gemini' : rawPool;
       const win = windows[pool] || windows.gemini;
       // 120s tolerance accommodates minute-bucket truncation on the current active minute
       if (tsMs < win.start_ms || tsMs > win.end_ms || tsMs > nowMs + 120000) {

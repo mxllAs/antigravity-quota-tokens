@@ -142,11 +142,19 @@ PLACEHOLDER_MODEL_MAP = {
     'MODEL_PLACEHOLDER_M526': ('gemini-4-hydrogen-medium', 'Gemini 4 Hydrogen', 1048576, '1M'),
     'MODEL_PLACEHOLDER_M527': ('gemini-4-hydrogen-low', 'Gemini 4 Hydrogen', 1048576, '1M'),
     'MODEL_PLACEHOLDER_M528': ('gemini-4-hydrogen-xhigh', 'Gemini 4 Hydrogen', 1048576, '1M'),
+    'MODEL_PLACEHOLDER_M530': ('gemini-4-hydrogen-tiered-high', 'Gemini 4 Hydrogen', 1048576, '1M'),
+    'MODEL_PLACEHOLDER_M531': ('gemini-4-hydrogen-tiered-xhigh', 'Gemini 4 Hydrogen', 1048576, '1M'),
+    'MODEL_PLACEHOLDER_M578': ('gemini-4-hydrogen-sonar', 'Gemini 4 Hydrogen', 1048576, '1M'),
+    'MODEL_PLACEHOLDER_M667': ('gemini-pro-orchestrator', 'Orchestrator (Carbon)', 1048576, '1M'),
     'MODEL_PLACEHOLDER_M668': ('gemini-pro-orchestrator-g1-pro', 'Orchestrator (Argon)', 1048576, '1M'),
     'MODEL_PLACEHOLDER_M669': ('gemini-pro-orchestrator-g1-pro', 'Orchestrator (Argon)', 1048576, '1M'),
+    'MODEL_PLACEHOLDER_M681': ('gemini-pro-orchestrator-argon', 'Orchestrator (Argon)', 1048576, '1M'),
     'MODEL_PLACEHOLDER_M417': ('gemini-4-argon-high', 'Gemini 4 Argon', 1048576, '1M'),
     'MODEL_PLACEHOLDER_M418': ('gemini-4-argon-medium', 'Gemini 4 Argon', 1048576, '1M'),
     'MODEL_PLACEHOLDER_M419': ('gemini-4-argon-low', 'Gemini 4 Argon', 1048576, '1M'),
+    'MODEL_PLACEHOLDER_M427': ('gemini-4-carbon-high', 'Gemini 4 Carbon', 1048576, '1M'),
+    'MODEL_PLACEHOLDER_M437': ('gemini-4-carbon-medium', 'Gemini 4 Carbon', 1048576, '1M'),
+    'MODEL_PLACEHOLDER_M438': ('gemini-4-carbon-low', 'Gemini 4 Carbon', 1048576, '1M'),
     'MODEL_PLACEHOLDER_M670': ('gemini-4-carbon', 'Gemini 4 Carbon', 1048576, '1M'),
     'MODEL_PLACEHOLDER_M400': ('claude-opus-5-5', 'Claude Opus 5.5', 1000000, '1M'),
     'MODEL_PLACEHOLDER_M401': ('claude-opus-5-5', 'Claude Opus 5.5', 1000000, '1M'),
@@ -157,6 +165,7 @@ PLACEHOLDER_MODEL_MAP = {
     'MODEL_PLACEHOLDER_M318': ('gemini-3.8-flash-high', 'Gemini 3.8 Flash', 1048576, '1M'),
     'MODEL_PLACEHOLDER_M319': ('gemini-3.8-flash-medium', 'Gemini 3.8 Flash', 1048576, '1M'),
     'MODEL_PLACEHOLDER_M320': ('gemini-3.8-flash-low', 'Gemini 3.8 Flash', 1048576, '1M'),
+    'MODEL_PLACEHOLDER_M322': ('gemini-3.8-flash-tiered', 'Gemini 3.8 Flash', 1048576, '1M'),
     'MODEL_PLACEHOLDER_M26': ('claude-opus-4-6', 'Claude Opus 4.6', 200000, '200k'),
     'MODEL_PLACEHOLDER_M35': ('claude-sonnet-4-6', 'Claude Sonnet 4.6', 200000, '200k'),
 }
@@ -213,8 +222,15 @@ def normalize_model_specs(raw):
             'context_label': ctx_lbl
         }
 
-    # Orchestrator (Argon) - check before 'pro' and 'argon'/'gemini'
+    # Orchestrator (Carbon / Argon) - check before 'pro' and 'argon'/'gemini'
     if 'orchestrator' in raw_lower:
+        if 'carbon' in raw_lower or raw_lower == 'gemini-pro-orchestrator':
+            return {
+                'id': raw_clean or 'gemini-pro-orchestrator',
+                'name': 'Orchestrator (Carbon)',
+                'context_window': 1048576,
+                'context_label': '1M'
+            }
         return {
             'id': raw_clean or 'gemini-pro-orchestrator-g1-pro',
             'name': 'Orchestrator (Argon)',

@@ -420,12 +420,25 @@ function renderData(quota, tokens) {
       document.getElementById('accountEmail').innerText =
         quota.user_email ||
         (currentLang === 'en' ? 'Official Account' : '官方账号');
-      document.getElementById('accountTier').innerText =
-        quota.tier_name || 'Google AI';
+      const tierEl = document.getElementById('accountTier');
+      tierEl.innerText = quota.tier_name || 'Google AI';
+      tierEl.classList.toggle(
+        'tier-ultra',
+        quota.tier_type === 'ultra' || /ultra/i.test(quota.tier_name || '')
+      );
 
       const avatarEl = document.getElementById('accountAvatar');
       if (quota.user_avatar) {
-        avatarEl.innerHTML = `<img src="${quota.user_avatar}" class="account-avatar-img" alt="${name}" referrerpolicy="no-referrer" />`;
+        avatarEl.innerHTML = '';
+        const img = document.createElement('img');
+        img.src = quota.user_avatar;
+        img.className = 'account-avatar-img';
+        img.alt = name;
+        img.referrerPolicy = 'no-referrer';
+        img.onerror = () => {
+          avatarEl.innerText = name.charAt(0) || '👤';
+        };
+        avatarEl.appendChild(img);
       } else {
         avatarEl.innerText = name.charAt(0) || '👤';
       }
