@@ -5,3 +5,4 @@
 **/__pycache__/**
 *.vsix
 .github/**
+agy-app-Plugins/**

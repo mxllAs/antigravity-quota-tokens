@@ -1,0 +1,8 @@
+{
+  "command": "node",
+  "args": ["main.mjs"],
+  "restart_policy": "always",
+  "display_name": "Chat Metrics Injector",
+  "description": "Injects context % and token speed inline next to the composer model selector.",
+  "has_web_ui": false
+}

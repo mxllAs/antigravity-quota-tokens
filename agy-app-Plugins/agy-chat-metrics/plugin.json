@@ -1,0 +1,7 @@
+{
+  "name": "agy-chat-metrics",
+  "displayName": "Chat Metrics (Context & Speed)",
+  "description": "在 Antigravity 桌面端聊天框底栏内嵌显示上下文占比与实时 Token 生成速度 (tok/s)。",
+  "version": "1.0.0",
+  "logo": "assets/logo.svg"
+}
