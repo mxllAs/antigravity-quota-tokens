@@ -4,6 +4,11 @@ import https from 'node:https';
 const GUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const MODEL_ALIASES = {
+  MODEL_PLACEHOLDER_M532: 'Gemini 4 Neon (High)',
+  MODEL_PLACEHOLDER_M533: 'Gemini 4 Neon (Medium)',
+  MODEL_PLACEHOLDER_M534: 'Gemini 4 Neon (Low)',
+  MODEL_PLACEHOLDER_M535: 'Gemini 4 Neon (XHigh)',
+  MODEL_PLACEHOLDER_M537: 'Orchestrator (Neon)',
   MODEL_PLACEHOLDER_M525: 'Gemini 4 Hydrogen (High)',
   MODEL_PLACEHOLDER_M526: 'Gemini 4 Hydrogen (Medium)',
   MODEL_PLACEHOLDER_M527: 'Gemini 4 Hydrogen (Low)',
@@ -18,6 +23,7 @@ const MODEL_ALIASES = {
   MODEL_PLACEHOLDER_M438: 'Gemini 4 Carbon (Low)',
   MODEL_PLACEHOLDER_M667: 'Orchestrator (Carbon)',
   MODEL_PLACEHOLDER_M668: 'Orchestrator (Argon)',
+  MODEL_PLACEHOLDER_M669: 'Gemini 4 Hydrogen (Orchestrator)',
   MODEL_PLACEHOLDER_M681: 'Orchestrator (Argon)',
   MODEL_PLACEHOLDER_M318: 'Gemini 3.8 Flash (High)',
   MODEL_PLACEHOLDER_M319: 'Gemini 3.8 Flash (Medium)',
@@ -33,10 +39,17 @@ const MODEL_ALIASES = {
   MODEL_OPENAI_GPT_OSS_120B_MEDIUM: 'GPT-OSS 120B',
 };
 
-function formatModelName(raw) {
+function formatModelName(raw, catalog = null) {
   if (!raw || typeof raw !== 'string') return '';
   if (MODEL_ALIASES[raw]) return MODEL_ALIASES[raw];
+  if (catalog && catalog.has(raw) && catalog.get(raw).displayName) {
+    return catalog.get(raw).displayName;
+  }
   const lower = raw.toLowerCase();
+  if (lower.includes('orchestrator') && lower.includes('neon')) return 'Orchestrator (Neon)';
+  if (lower.includes('orchestrator') && lower.includes('carbon')) return 'Orchestrator (Carbon)';
+  if (lower.includes('orchestrator') && lower.includes('argon')) return 'Orchestrator (Argon)';
+  if (lower.includes('neon')) return 'Gemini 4 Neon';
   if (lower.includes('hydrogen')) return 'Gemini 4 Hydrogen';
   if (lower.includes('carbon')) return 'Gemini 4 Carbon';
   if (lower.includes('argon')) return 'Gemini 4 Argon';
@@ -159,6 +172,47 @@ async function fetchQuotaCompact() {
   return cachedQuota;
 }
 
+let cachedModelCatalog = null;
+let cachedModelCatalogAt = 0;
+
+async function fetchModelCatalog() {
+  const now = Date.now();
+  if (cachedModelCatalog && now - cachedModelCatalogAt < 60000) return cachedModelCatalog;
+  const raw = await callLsRpc('GetAvailableModels', {});
+  const models = raw?.response?.models || raw?.models;
+  if (!models || typeof models !== 'object') return cachedModelCatalog || new Map();
+
+  const map = new Map();
+  for (const [slug, info] of Object.entries(models)) {
+    if (!info || typeof info !== 'object') continue;
+    const maxTokens = typeof info.maxTokens === 'number' && info.maxTokens > 0 ? info.maxTokens : null;
+    const entry = {
+      slug,
+      enumId: info.model || '',
+      displayName: info.displayName || '',
+      maxTokens,
+    };
+    map.set(slug, entry);
+    if (entry.enumId) map.set(entry.enumId, entry);
+  }
+  cachedModelCatalog = map;
+  cachedModelCatalogAt = now;
+  return cachedModelCatalog;
+}
+
+function resolveModelMaxTokens(rawCandidates, modelDisplay, catalog, compactionFallback) {
+  for (const cand of rawCandidates) {
+    if (!cand) continue;
+    const hit = catalog?.get(cand);
+    if (hit && hit.maxTokens) return hit.maxTokens;
+  }
+  const lower = (modelDisplay || rawCandidates.join(' ')).toLowerCase();
+  if (/gemini\s*[34]|hydrogen|neon|argon|carbon|orchestrator/i.test(lower)) return 1048576;
+  if (/claude.*5\.5/i.test(lower)) return 1000000;
+  if (/gpt-oss-120b/i.test(lower)) return 131072;
+  return compactionFallback || null;
+}
+
 async function resolveFallbackConversationId() {
   const all = await callLsRpc('GetAllCascadeTrajectories', {});
   const summaries = all?.trajectorySummaries;
@@ -187,9 +241,10 @@ export async function collectChatMetrics(conversationId = null) {
     return { ok: false, error: 'no-conversation', context: null, speed: null, quota: null };
   }
 
-  const [trajRes, quota] = await Promise.all([
+  const [trajRes, quota, catalog] = await Promise.all([
     callLsRpc('GetCascadeTrajectory', { cascadeId: cid }),
     fetchQuotaCompact(),
+    fetchModelCatalog(),
   ]);
 
   const traj = trajRes?.trajectory;
@@ -218,7 +273,7 @@ export async function collectChatMetrics(conversationId = null) {
     if (!cm) continue;
 
     const modelRaw = cm.modelDisplayName || cm.responseModel || String(cm.model || cm.usage?.model || '');
-    if (modelRaw) latestModel = formatModelName(modelRaw);
+    if (modelRaw) latestModel = formatModelName(modelRaw, catalog);
 
     const usage = cm.usage;
     if (!usage) continue;
@@ -267,16 +322,46 @@ export async function collectChatMetrics(conversationId = null) {
     const cwm = cm?.chatStartMetadata?.contextWindowMetadata;
     if (cwm && typeof cwm.estimatedTokensUsed === 'number') {
       const used = cwm.estimatedTokensUsed;
-      const max = typeof cwm.maxContextTokens === 'number' && cwm.maxContextTokens > 0
-        ? cwm.maxContextTokens
-        : null;
-      const usedPct = max ? Math.min(100, Math.max(0, (used / max) * 100)) : null;
+      const compactionTokens =
+        typeof cwm.maxContextTokens === 'number' && cwm.maxContextTokens > 0
+          ? cwm.maxContextTokens
+          : null;
+      const rawCandidates = [
+        cm.responseModel,
+        String(cm.model || ''),
+        cm.usage?.model,
+        cm.modelDisplayName,
+      ];
+      const modelDisplay =
+        formatModelName(
+          cm.modelDisplayName || cm.responseModel || String(cm.model || ''),
+          catalog
+        ) || latestModel;
+      const maxTokens = resolveModelMaxTokens(
+        rawCandidates,
+        modelDisplay,
+        catalog,
+        compactionTokens
+      );
+      const usedPct = maxTokens ? Math.min(100, Math.max(0, (used / maxTokens) * 100)) : null;
+      const compactionPct =
+        compactionTokens && maxTokens && compactionTokens <= maxTokens
+          ? Math.min(100, Math.max(0, (compactionTokens / maxTokens) * 100))
+          : null;
+      const toCompactionTokens =
+        compactionTokens !== null ? Math.max(0, compactionTokens - used) : null;
+      const compactionRatio = compactionTokens ? used / compactionTokens : null;
+
       context = {
         usedTokens: used,
-        maxTokens: max,
-        remainingTokens: max !== null ? Math.max(0, max - used) : null,
+        maxTokens,
+        compactionTokens,
+        compactionPct,
+        toCompactionTokens,
+        compactionRatio,
+        remainingTokens: maxTokens !== null ? Math.max(0, maxTokens - used) : null,
         usedPct,
-        model: formatModelName(cm.modelDisplayName || cm.responseModel || String(cm.model || '')) || latestModel,
+        model: modelDisplay,
       };
       break;
     }

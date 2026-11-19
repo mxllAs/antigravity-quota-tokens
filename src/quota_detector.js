@@ -479,9 +479,9 @@ function parseQuota(status, quotaSummary) {
   const availRegularGemini = clientModels.filter((m) => {
     if (m.tagTitle === 'Unavailable') return false;
     if (!hasSeparateGemini4Pool) {
-      return /(?:carbon|argon|hydrogen|gemini\s*3\.\d)/i.test(m.label);
+      return /(?:carbon|argon|neon|hydrogen|gemini\s*3\.\d)/i.test(m.label);
     }
-    return /hydrogen|gemini\s*3\.\d/i.test(m.label);
+    return /(?:neon|hydrogen|gemini\s*3\.\d)/i.test(m.label);
   });
   const regularGeminiNames = collectUniqueNames(availRegularGemini);
   const activeGeminiModel = regularGeminiNames[0] || 'Gemini 3.8 Flash';

@@ -138,6 +138,11 @@ def extract_session_title(cur):
     return ''
 
 PLACEHOLDER_MODEL_MAP = {
+    'MODEL_PLACEHOLDER_M532': ('gemini-4-neon-high', 'Gemini 4 Neon', 1048576, '1M'),
+    'MODEL_PLACEHOLDER_M533': ('gemini-4-neon-medium', 'Gemini 4 Neon', 1048576, '1M'),
+    'MODEL_PLACEHOLDER_M534': ('gemini-4-neon-low', 'Gemini 4 Neon', 1048576, '1M'),
+    'MODEL_PLACEHOLDER_M535': ('gemini-4-neon-xhigh', 'Gemini 4 Neon', 1048576, '1M'),
+    'MODEL_PLACEHOLDER_M537': ('gemini-pro-orchestrator-neon', 'Orchestrator (Neon)', 1048576, '1M'),
     'MODEL_PLACEHOLDER_M525': ('gemini-4-hydrogen-high', 'Gemini 4 Hydrogen', 1048576, '1M'),
     'MODEL_PLACEHOLDER_M526': ('gemini-4-hydrogen-medium', 'Gemini 4 Hydrogen', 1048576, '1M'),
     'MODEL_PLACEHOLDER_M527': ('gemini-4-hydrogen-low', 'Gemini 4 Hydrogen', 1048576, '1M'),
@@ -222,8 +227,15 @@ def normalize_model_specs(raw):
             'context_label': ctx_lbl
         }
 
-    # Orchestrator (Carbon / Argon) - check before 'pro' and 'argon'/'gemini'
+    # Orchestrator (Carbon / Neon / Argon) - check before 'pro' and 'argon'/'gemini'
     if 'orchestrator' in raw_lower:
+        if 'neon' in raw_lower:
+            return {
+                'id': raw_clean or 'gemini-pro-orchestrator-neon',
+                'name': 'Orchestrator (Neon)',
+                'context_window': 1048576,
+                'context_label': '1M'
+            }
         if 'carbon' in raw_lower or raw_lower == 'gemini-pro-orchestrator':
             return {
                 'id': raw_clean or 'gemini-pro-orchestrator',
@@ -234,6 +246,15 @@ def normalize_model_specs(raw):
         return {
             'id': raw_clean or 'gemini-pro-orchestrator-g1-pro',
             'name': 'Orchestrator (Argon)',
+            'context_window': 1048576,
+            'context_label': '1M'
+        }
+
+    # Gemini 4 Neon - check before generic 'gemini-4'
+    if 'neon' in raw_lower:
+        return {
+            'id': raw_clean or 'gemini-4-neon',
+            'name': 'Gemini 4 Neon',
             'context_window': 1048576,
             'context_label': '1M'
         }

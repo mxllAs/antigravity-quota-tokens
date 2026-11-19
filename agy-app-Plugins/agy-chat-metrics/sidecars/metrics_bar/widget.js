@@ -93,6 +93,7 @@ export function buildWidgetScript(bindingName) {
 
   function compactNum(n) {
     if (typeof n !== 'number' || !Number.isFinite(n)) return '—';
+    if (n === 1048576 || n === 1000000) return '1M';
     if (n >= 1e6) return (n / 1e6).toFixed(2).replace(/\\.00$/, '') + 'M';
     if (n >= 1e3) return (n / 1e3).toFixed(1).replace(/\\.0$/, '') + 'K';
     return String(Math.round(n));
@@ -246,8 +247,8 @@ export function buildWidgetScript(bindingName) {
           position: absolute;
           bottom: calc(100% + 8px);
           left: 0;
-          min-width: 228px;
-          max-width: 280px;
+          min-width: 244px;
+          max-width: 295px;
           background: var(--ag-card);
           color: var(--ag-fg);
           border: 1px solid var(--ag-border);
@@ -280,18 +281,19 @@ export function buildWidgetScript(bindingName) {
           font-weight: 500;
           font-size: 10px;
           color: var(--ag-muted);
-          max-width: 130px;
+          max-width: 140px;
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
         }
         .pop-bar-bg {
+          position: relative;
           width: 100%;
-          height: 5px;
+          height: 6px;
           border-radius: 3px;
           background: var(--ag-pill-bg);
-          overflow: hidden;
-          margin: 5px 0 7px;
+          overflow: visible;
+          margin: 5px 0 8px;
         }
         .pop-bar-fill {
           height: 100%;
@@ -299,20 +301,35 @@ export function buildWidgetScript(bindingName) {
           background: var(--ag-ok);
           transition: width 0.3s ease;
         }
+        .pop-bar-tick {
+          position: absolute;
+          top: -2px;
+          bottom: -2px;
+          width: 2px;
+          border-radius: 1px;
+          background: var(--ag-warn);
+          transform: translateX(-1px);
+          pointer-events: none;
+        }
         .pop-row {
           display: flex;
           justify-content: space-between;
           align-items: center;
           padding: 2px 0;
           font-size: 11px;
+          gap: 10px;
         }
         .pop-k {
           color: var(--ag-muted);
+          white-space: nowrap;
         }
         .pop-v {
           font-weight: 600;
           font-variant-numeric: tabular-nums;
+          text-align: right;
         }
+        .pop-v.warn { color: var(--ag-warn); }
+        .pop-v.danger { color: var(--ag-danger); }
         .pop-sep {
           height: 1px;
           background: var(--ag-border);
@@ -321,7 +338,7 @@ export function buildWidgetScript(bindingName) {
         .hidden { display: none !important; }
       </style>
       <div class="wrap">
-        <button type="button" class="pill" id="ctxPill" title="当前对话上下文占用">
+        <button type="button" class="pill" id="ctxPill" title="当前对话上下文占用 (基于 1M 窗口)">
           <svg class="ring-svg" viewBox="0 0 16 16">
             <circle class="ring-track" cx="8" cy="8" r="5.5"></circle>
             <circle class="ring-fill" id="ctxRing" cx="8" cy="8" r="5.5" stroke-dasharray="34.56" stroke-dashoffset="34.56"></circle>
@@ -342,9 +359,13 @@ export function buildWidgetScript(bindingName) {
               <span>上下文窗口占用</span>
               <span class="pop-model" id="popCtxModel"></span>
             </div>
-            <div class="pop-bar-bg"><div class="pop-bar-fill" id="popCtxBar" style="width:0%"></div></div>
-            <div class="pop-row"><span class="pop-k">已用 / 上限</span><span class="pop-v" id="popCtxNums">—</span></div>
-            <div class="pop-row"><span class="pop-k">剩余可用</span><span class="pop-v" id="popCtxRem">—</span></div>
+            <div class="pop-bar-bg">
+              <div class="pop-bar-fill" id="popCtxBar" style="width:0%"></div>
+              <div class="pop-bar-tick hidden" id="popCtxTick" title="自动压缩阈值"></div>
+            </div>
+            <div class="pop-row"><span class="pop-k">已用 / 窗口上限</span><span class="pop-v" id="popCtxNums">—</span></div>
+            <div class="pop-row" id="popCtxCompactRow"><span class="pop-k">自动压缩阈值</span><span class="pop-v" id="popCtxCompact">—</span></div>
+            <div class="pop-row"><span class="pop-k">物理剩余容量</span><span class="pop-v" id="popCtxRem">—</span></div>
             <div id="popQuotaBlock" class="hidden">
               <div class="pop-sep"></div>
               <div id="popQuotaRows"></div>
@@ -456,9 +477,17 @@ export function buildWidgetScript(bindingName) {
 
       const ctx = data?.context;
       const pct = typeof ctx?.usedPct === 'number' ? ctx.usedPct : null;
+      const compRatio = typeof ctx?.compactionRatio === 'number' ? ctx.compactionRatio : null;
       const ring = $('ctxRing');
-      const color =
-        pct === null ? 'var(--ag-muted)' : pct >= 90 ? 'var(--ag-danger)' : pct >= 75 ? 'var(--ag-warn)' : 'var(--ag-ok)';
+
+      let color = 'var(--ag-ok)';
+      if (pct === null) {
+        color = 'var(--ag-muted)';
+      } else if (pct >= 90 || (compRatio !== null && compRatio >= 0.95)) {
+        color = 'var(--ag-danger)';
+      } else if (pct >= 75 || (compRatio !== null && compRatio >= 0.80)) {
+        color = 'var(--ag-warn)';
+      }
 
       $('ctxText').textContent = pct !== null ? Math.round(pct) + '%' : '—';
       const circ = 34.56;
@@ -468,9 +497,37 @@ export function buildWidgetScript(bindingName) {
       $('popCtxModel').textContent = ctx?.model || '';
       $('popCtxBar').style.width = pct !== null ? pct.toFixed(1) + '%' : '0%';
       $('popCtxBar').style.background = color;
+
+      const tick = $('popCtxTick');
+      if (typeof ctx?.compactionPct === 'number' && ctx.compactionPct > 0 && ctx.compactionPct < 100) {
+        tick.style.left = ctx.compactionPct.toFixed(1) + '%';
+        tick.title = '自动压缩阈值: ' + compactNum(ctx.compactionTokens);
+        tick.classList.remove('hidden');
+      } else {
+        tick.classList.add('hidden');
+      }
+
       $('popCtxNums').textContent = ctx
-        ? compactNum(ctx.usedTokens) + ' / ' + (ctx.maxTokens ? compactNum(ctx.maxTokens) : '—')
+        ? compactNum(ctx.usedTokens) + ' / ' + (ctx.maxTokens ? compactNum(ctx.maxTokens) : '—') + (pct !== null ? ' (' + pct.toFixed(1) + '%)' : '')
         : '暂无采样';
+
+      const compEl = $('popCtxCompact');
+      const compRow = $('popCtxCompactRow');
+      compEl.classList.remove('warn', 'danger');
+      if (ctx?.compactionTokens) {
+        compRow.classList.remove('hidden');
+        const cLabel = compactNum(ctx.compactionTokens);
+        if (ctx.toCompactionTokens > 0) {
+          compEl.textContent = cLabel + ' (距压缩还剩 ' + compactNum(ctx.toCompactionTokens) + ')';
+        } else {
+          compEl.textContent = cLabel + ' (已达压缩阈值)';
+        }
+        if (compRatio !== null && compRatio >= 0.95) compEl.classList.add('danger');
+        else if (compRatio !== null && compRatio >= 0.80) compEl.classList.add('warn');
+      } else {
+        compRow.classList.add('hidden');
+      }
+
       $('popCtxRem').textContent = ctx?.remainingTokens != null ? compactNum(ctx.remainingTokens) + ' tokens' : '—';
 
       const qList = Array.isArray(data?.quota) ? data.quota : [];

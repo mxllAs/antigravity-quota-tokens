@@ -3,6 +3,17 @@
 本文档记录 **Antigravity Quota & Token Monitor** 扩展的所有重要版本更新。  
 本格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，并遵循 [语义化版本规范 (SemVer)](https://semver.org/lang/zh-CN/)。
 
+## [1.4.9] - 2026-11-19
+
+### ✨ 新增功能与模型适配 (Features & Model Support)
+* **全面支持 `Gemini 4 Neon` 与 `Orchestrator (Neon)` 新模型**（[quota_detector.js](src/quota_detector.js) / [token_collector.py](src/token_collector.py)）：
+  * 将 `Gemini 4 Neon` 与 `Orchestrator (Neon)` 精准归入常规 **Gemini 额度池**（共享 5h + 周额度）并在「Gemini 额度池」模型列表中实时展示。
+  * 在 `token_collector.py` 中新增 Protobuf 枚举映射（`MODEL_PLACEHOLDER_M532`~`M535`、`M537`）与 `neon` 归一化逻辑，确保会话与周期统计准确识别 `1M` 上下文规格。
+* **新增 Antigravity 桌面端插件套件 (`agy-app-Plugins/`)**（[agy-app-Plugins/README.md](agy-app-Plugins/README.md)）：
+  * 新增桌面端聊天框底栏内嵌插件 `agy-chat-metrics`：实时显示基于 `1M` 物理上限的上下文占用百分比（含 `512K`/`256K` 自动压缩阈值竖线标记与剩余提醒）及真实 Token 生成速度（`tok/s` / TTFT / 缓存命中率），自适应桌面端深浅主题，支持一键安装/卸载脚本（打包 `.vsix` 时已自动排除）。
+
+---
+
 ## [1.4.8] - 2026-11-18
 
 ### ✨ 新增功能：Google AI Ultra 满血合并池与专属样式适配
