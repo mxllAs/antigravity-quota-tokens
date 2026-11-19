@@ -1,5 +1,6 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import http from 'node:http';
+import net from 'node:net';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildPickerWidgetScript } from './widget.js';
@@ -205,11 +206,43 @@ async function attachTarget(target) {
   }
 }
 
+function checkLsAlive() {
+  const lsAddr = process.env.ANTIGRAVITY_LS_ADDRESS;
+  if (!lsAddr) return Promise.resolve(true);
+  const idx = lsAddr.lastIndexOf(':');
+  const host = idx > 0 ? lsAddr.slice(0, idx).replace(/^\[|\]$/g, '') : '';
+  const port = idx > 0 ? parseInt(lsAddr.slice(idx + 1), 10) : 0;
+  if (!host || !port) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    const sock = net.createConnection({ host, port });
+    const done = (ok) => {
+      sock.destroy();
+      resolve(ok);
+    };
+    sock.setTimeout(1000);
+    sock.once('connect', () => done(true));
+    sock.once('timeout', () => done(false));
+    sock.once('error', () => done(false));
+  });
+}
+
 let ticking = false;
+let lsDeadCount = 0;
 async function tick() {
   if (ticking) return;
   ticking = true;
   try {
+    // Exit cleanly if the parent language_server is gone so orphaned Windows sidecars never accumulate.
+    if (!(await checkLsAlive())) {
+      lsDeadCount++;
+      if (lsDeadCount >= 3) {
+        console.log('[agy-model-picker] parent language_server exited, shutting down sidecar');
+        await cleanupAndExit();
+      }
+      return;
+    }
+    lsDeadCount = 0;
+
     const targets = await discoverTargets();
     const activeUrls = new Set(targets.map((t) => t.webSocketDebuggerUrl));
 
