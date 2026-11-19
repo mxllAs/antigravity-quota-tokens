@@ -39,11 +39,15 @@ foreach ($p in $candidates) {
 if (-not $SkipShortcuts) {
   Write-Host "[2/2] Configuring Antigravity Desktop loopback debug flags on shortcuts ..." -ForegroundColor Cyan
   $debugFlags = '--remote-debugging-port=0 --remote-debugging-address=127.0.0.1'
+  $defaultExe = Join-Path $env:LOCALAPPDATA 'Programs\antigravity\Antigravity.exe'
+  $specialDesktop = [Environment]::GetFolderPath('Desktop')
   $shortcuts = @(
+    (Join-Path $specialDesktop 'Antigravity.lnk'),
     (Join-Path $env:USERPROFILE 'Desktop\Antigravity.lnk'),
+    (Join-Path $env:PUBLIC 'Desktop\Antigravity.lnk'),
     (Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Antigravity.lnk'),
     (Join-Path $env:APPDATA 'Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar\Antigravity.lnk')
-  )
+  ) | Select-Object -Unique
   $shell = New-Object -ComObject WScript.Shell
   foreach ($lnk in $shortcuts) {
     if (Test-Path $lnk) {
@@ -57,6 +61,17 @@ if (-not $SkipShortcuts) {
         } else {
           Write-Host "  Already configured: $lnk" -ForegroundColor DarkGray
         }
+      }
+    } elseif (Test-Path $defaultExe) {
+      $dir = Split-Path $lnk -Parent
+      if (Test-Path $dir) {
+        $sc = $shell.CreateShortcut($lnk)
+        $sc.TargetPath = $defaultExe
+        $sc.Arguments = $debugFlags
+        $sc.WorkingDirectory = Split-Path $defaultExe -Parent
+        $sc.IconLocation = "$defaultExe,0"
+        $sc.Save()
+        Write-Host "  Created shortcut: $lnk" -ForegroundColor Green
       }
     }
   }
