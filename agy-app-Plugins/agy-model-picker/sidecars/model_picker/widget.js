@@ -216,10 +216,26 @@ export function buildPickerWidgetScript() {
       for (const opt of ctx.modelOptions) pushOpt(opt);
     }
 
+    function parseResetSec(rt) {
+      if (!rt) return null;
+      if (typeof rt === 'number') return rt > 1e11 ? Math.floor(rt / 1000) : Math.floor(rt);
+      if (rt.seconds != null) return Number(rt.seconds);
+      if (typeof rt === 'string') {
+        const num = Number(rt);
+        if (!isNaN(num) && num > 0) return num > 1e11 ? Math.floor(num / 1000) : Math.floor(num);
+        const parsed = Date.parse(rt);
+        if (!isNaN(parsed)) return Math.floor(parsed / 1000);
+      }
+      return null;
+    }
+
     const byBase = new Map();
     for (const opt of rawOptions) {
       const { baseName, tier } = splitLabelTier(opt.label);
       let entry = byBase.get(baseName);
+      const optQuota = typeof opt.quotaInfo?.remainingFraction === 'number' ? opt.quotaInfo.remainingFraction : null;
+      const optReset = parseResetSec(opt.quotaInfo?.resetTime);
+
       if (!entry) {
         entry = {
           baseName,
@@ -229,8 +245,8 @@ export function buildPickerWidgetScript() {
           allDisabled: true,
           tagTitle: opt.tagTitle || '',
           tagDescription: opt.tagDescription || '',
-          quotaFraction: typeof opt.quotaInfo?.remainingFraction === 'number' ? opt.quotaInfo.remainingFraction : null,
-          resetTimeSeconds: opt.quotaInfo?.resetTime?.seconds ? Number(opt.quotaInfo.resetTime.seconds) : null,
+          quotaFraction: optQuota,
+          resetTimeSeconds: optReset,
         };
         byBase.set(baseName, entry);
       }
@@ -241,11 +257,41 @@ export function buildPickerWidgetScript() {
       if (!opt.disabled) entry.allDisabled = false;
       if (!entry.tagTitle && opt.tagTitle) entry.tagTitle = opt.tagTitle;
       if (!entry.tagDescription && opt.tagDescription) entry.tagDescription = opt.tagDescription;
-      if (entry.quotaFraction == null && typeof opt.quotaInfo?.remainingFraction === 'number') {
-        entry.quotaFraction = opt.quotaInfo.remainingFraction;
+      if (entry.quotaFraction == null && optQuota != null) {
+        entry.quotaFraction = optQuota;
       }
-      if (entry.resetTimeSeconds == null && opt.quotaInfo?.resetTime?.seconds) {
-        entry.resetTimeSeconds = Number(opt.quotaInfo.resetTime.seconds);
+      if (entry.resetTimeSeconds == null && optReset != null) {
+        entry.resetTimeSeconds = optReset;
+      }
+    }
+
+    // Give priority to selectedModel's live quotaInfo if available
+    if (ctx.selectedModel?.label && ctx.selectedModel?.quotaInfo) {
+      const { baseName } = splitLabelTier(ctx.selectedModel.label);
+      const entry = byBase.get(baseName);
+      if (entry && typeof ctx.selectedModel.quotaInfo.remainingFraction === 'number') {
+        entry.quotaFraction = ctx.selectedModel.quotaInfo.remainingFraction;
+        const selReset = parseResetSec(ctx.selectedModel.quotaInfo.resetTime);
+        if (selReset != null) entry.resetTimeSeconds = selReset;
+      }
+    }
+
+    // Inspect userStatus clientModelConfigs for any missing quotaInfo
+    const clientConfigs = ctx.userStatus?.cascadeModelConfigData?.clientModelConfigs;
+    if (Array.isArray(clientConfigs)) {
+      for (const cfg of clientConfigs) {
+        if (!cfg?.label || !cfg?.quotaInfo) continue;
+        const { baseName } = splitLabelTier(cfg.label);
+        const entry = byBase.get(baseName);
+        if (entry) {
+          if (entry.quotaFraction == null && typeof cfg.quotaInfo.remainingFraction === 'number') {
+            entry.quotaFraction = cfg.quotaInfo.remainingFraction;
+          }
+          if (entry.resetTimeSeconds == null) {
+            const cfgReset = parseResetSec(cfg.quotaInfo.resetTime);
+            if (cfgReset != null) entry.resetTimeSeconds = cfgReset;
+          }
+        }
       }
     }
 
@@ -399,6 +445,11 @@ export function buildPickerWidgetScript() {
       .icon-btn:hover {
         background: var(--ag-surface-hover);
         color: var(--ag-fg);
+      }
+      .icon-btn.loading {
+        opacity: 0.7;
+        cursor: wait;
+        pointer-events: none;
       }
       .sec-label {
         display: flex;
@@ -883,7 +934,40 @@ export function buildPickerWidgetScript() {
     }
   }
 
+  let autoRefreshTimer = null;
+
+  function stopAutoRefresh() {
+    if (autoRefreshTimer) {
+      clearInterval(autoRefreshTimer);
+      autoRefreshTimer = null;
+    }
+  }
+
+  function triggerQuotaRefresh(ctx) {
+    const liveCtx = findModelContext(activeBtn) || ctx;
+    if (liveCtx && typeof liveCtx.refreshModels === 'function') {
+      return Promise.resolve(liveCtx.refreshModels()).then(() => {
+        if (overlayHost.style.display === 'block') {
+          render();
+        }
+      }).catch(() => {});
+    }
+    return Promise.resolve();
+  }
+
+  function startAutoRefresh(ctx) {
+    stopAutoRefresh();
+    autoRefreshTimer = setInterval(() => {
+      if (overlayHost.style.display !== 'block' || !activeBtn) {
+        stopAutoRefresh();
+        return;
+      }
+      triggerQuotaRefresh(ctx);
+    }, 10000);
+  }
+
   function closePicker() {
+    stopAutoRefresh();
     detachBtnObserver();
     if (overlayHost.style.display === 'none') return;
     overlayHost.style.display = 'none';
@@ -1175,9 +1259,18 @@ export function buildPickerWidgetScript() {
       panel._settleUntil = 0;
       render();
     });
-    panel.querySelector('[data-act="refresh"]')?.addEventListener('click', () => {
-      try { (findModelContext(activeBtn) || ctx).refreshModels?.(); } catch {}
-      setTimeout(() => render(), 250);
+    panel.querySelector('[data-act="refresh"]')?.addEventListener('click', async (ev) => {
+      const btn = ev.currentTarget;
+      if (btn.classList.contains('loading')) return;
+      btn.classList.add('loading');
+      btn.textContent = '刷新中…';
+      try {
+        await triggerQuotaRefresh(ctx);
+      } finally {
+        if (overlayHost.style.display === 'block') {
+          render();
+        }
+      }
     });
     panel.querySelector('[data-act="native"]')?.addEventListener('click', () => {
       if (activeBtn) openNativeMenu(activeBtn);
@@ -1330,6 +1423,7 @@ export function buildPickerWidgetScript() {
     panel._settleUntil = 0;
     applyTheme();
     overlayHost.style.display = 'block';
+    startAutoRefresh(ctx);
     btnObserver = new MutationObserver(() => {
       if (!panel._isDraggingSlider?.() && overlayHost.style.display === 'block') {
         render();
@@ -1337,6 +1431,7 @@ export function buildPickerWidgetScript() {
     });
     btnObserver.observe(btn, { childList: true, subtree: true, characterData: true });
     render();
+    triggerQuotaRefresh(ctx);
   }
 
   function matchTrigger(target) {
@@ -1399,7 +1494,10 @@ export function buildPickerWidgetScript() {
   window.addEventListener('resize', onResize);
 
   window.__agyModelPickerInstalled = true;
+  window.__agyModelPickerToggle = togglePicker;
   window.__agyModelPickerDispose = () => {
+    stopAutoRefresh();
+    detachBtnObserver();
     document.removeEventListener('pointerdown', onPointerOrMouseDown, true);
     document.removeEventListener('mousedown', onPointerOrMouseDown, true);
     document.removeEventListener('click', onClickCapture, true);
@@ -1408,6 +1506,7 @@ export function buildPickerWidgetScript() {
     window.removeEventListener('resize', onResize);
     overlayHost.remove();
     delete window.__agyModelPickerInstalled;
+    delete window.__agyModelPickerToggle;
     delete window.__agyModelPickerDispose;
   };
 })();`;
