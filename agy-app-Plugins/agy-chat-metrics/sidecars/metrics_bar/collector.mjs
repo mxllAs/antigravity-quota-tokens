@@ -232,6 +232,8 @@ async function resolveFallbackConversationId() {
   return bestId;
 }
 
+const lastMetricsByCid = new Map();
+
 export async function collectChatMetrics(conversationId = null) {
   let cid = conversationId && GUID_RE.test(conversationId) ? conversationId : null;
   if (!cid) {
@@ -249,6 +251,10 @@ export async function collectChatMetrics(conversationId = null) {
 
   const traj = trajRes?.trajectory;
   if (!traj) {
+    if (lastMetricsByCid.has(cid)) {
+      const cached = lastMetricsByCid.get(cid);
+      return { ...cached, quota: quota || cached.quota, isWarmingUp: true };
+    }
     return { ok: false, conversationId: cid, error: 'trajectory-unavailable', context: null, speed: null, quota };
   }
 
@@ -371,7 +377,7 @@ export async function collectChatMetrics(conversationId = null) {
   const totalInputAll = totalInputTokens + totalCacheReadTokens;
   const cacheHitRate = totalInputAll > 0 ? (totalCacheReadTokens / totalInputAll) * 100 : null;
 
-  return {
+  const out = {
     ok: true,
     conversationId: cid,
     status: trajRes?.status || null,
@@ -393,4 +399,6 @@ export async function collectChatMetrics(conversationId = null) {
     },
     quota,
   };
+  lastMetricsByCid.set(cid, out);
+  return out;
 }

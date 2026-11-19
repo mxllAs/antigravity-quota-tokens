@@ -475,6 +475,12 @@ export function buildWidgetScript(bindingName) {
       lastData = data;
       syncTheme();
 
+      if (data?.ok) {
+        try {
+          localStorage.setItem('__agy_chat_metrics_cache', JSON.stringify({ data, at: Date.now() }));
+        } catch {}
+      }
+
       const ctx = data?.context;
       const pct = typeof ctx?.usedPct === 'number' ? ctx.usedPct : null;
       const compRatio = typeof ctx?.compactionRatio === 'number' ? ctx.compactionRatio : null;
@@ -571,6 +577,16 @@ export function buildWidgetScript(bindingName) {
 
     attach(composer);
 
+    try {
+      const cachedRaw = localStorage.getItem('__agy_chat_metrics_cache');
+      if (cachedRaw) {
+        const cached = JSON.parse(cachedRaw);
+        if (cached?.data?.ok && Date.now() - cached.at < 86400000) {
+          render(cached.data);
+        }
+      }
+    } catch {}
+
     let lastCid = undefined;
     let inflight = false;
 
@@ -583,7 +599,11 @@ export function buildWidgetScript(bindingName) {
       inflight = true;
       try {
         const res = await callHost('metrics', { conversationId: cid });
-        if (res && res.ok) render(res);
+        if (res && res.ok) {
+          render(res);
+        } else if (!lastData?.ok) {
+          setTimeout(() => poll(), 800);
+        }
       } finally {
         inflight = false;
       }
