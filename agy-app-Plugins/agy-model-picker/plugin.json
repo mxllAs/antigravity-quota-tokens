@@ -1,0 +1,7 @@
+{
+  "name": "agy-model-picker",
+  "displayName": "Periodic Model & Effort Picker",
+  "description": "元素周期表风格模型选择器 + 自适应推理强度滑块（右键或 Shift+点击保留原生菜单）。",
+  "version": "1.0.0",
+  "logo": "assets/logo.svg"
+}

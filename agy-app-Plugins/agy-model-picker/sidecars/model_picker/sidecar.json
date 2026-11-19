@@ -1,0 +1,8 @@
+{
+  "command": "node",
+  "args": ["main.mjs"],
+  "restart_policy": "always",
+  "display_name": "Periodic Model & Effort Picker",
+  "description": "Replaces left-click on the model selector with a Periodic Table model picker and reasoning effort slider.",
+  "has_web_ui": false
+}

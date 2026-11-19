@@ -12,6 +12,7 @@
 | 插件目录 | 显示名称 | 核心功能 | 说明文档 |
 | :--- | :--- | :--- | :--- |
 | [`agy-chat-metrics/`](agy-chat-metrics/) | **Chat Metrics (Context & Speed)** | 聊天框底栏内嵌显示当前会话**上下文占比 (%)** 与 **Token 生成速度 (`tok/s`)**，跟随桌面端主题自动变色（无右侧面板） | [README.md](agy-chat-metrics/README.md) |
+| [`agy-model-picker/`](agy-model-picker/) | **Periodic Model & Effort Picker** | 左键呼出 **Gemini 4 元素周期表 + 自适应推理强度滑块**（右键/`Shift+点击`保留原生菜单） | [README.md](agy-model-picker/README.md) |
 
 ---
 
