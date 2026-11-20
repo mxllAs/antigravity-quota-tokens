@@ -1,6 +1,11 @@
+import { readFile, writeFile } from 'node:fs/promises';
 import http from 'node:http';
 import https from 'node:https';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const CACHE_FILE = join(__dirname, 'cache.json');
 const GUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const MODEL_ALIASES = {
@@ -233,8 +238,42 @@ async function resolveFallbackConversationId() {
 }
 
 const lastMetricsByCid = new Map();
+let diskCacheLoaded = false;
+let lastDiskWriteAt = 0;
+
+async function ensureDiskCacheLoaded() {
+  if (diskCacheLoaded) return;
+  diskCacheLoaded = true;
+  try {
+    const raw = await readFile(CACHE_FILE, 'utf8');
+    const parsed = JSON.parse(raw);
+    const now = Date.now();
+    if (parsed && typeof parsed === 'object') {
+      for (const [id, entry] of Object.entries(parsed)) {
+        if (GUID_RE.test(id) && entry?.data?.ok && now - (entry.at || 0) < 86400000) {
+          lastMetricsByCid.set(id, entry);
+        }
+      }
+    }
+  } catch {}
+}
+
+function saveMetricsToCache(cid, data) {
+  lastMetricsByCid.set(cid, { data, at: Date.now() });
+  // Cap map size to 20 recent conversations
+  if (lastMetricsByCid.size > 20) {
+    const oldestKey = lastMetricsByCid.keys().next().value;
+    if (oldestKey) lastMetricsByCid.delete(oldestKey);
+  }
+  const now = Date.now();
+  if (now - lastDiskWriteAt < 3000) return;
+  lastDiskWriteAt = now;
+  const obj = Object.fromEntries(lastMetricsByCid.entries());
+  writeFile(CACHE_FILE, JSON.stringify(obj), 'utf8').catch(() => {});
+}
 
 export async function collectChatMetrics(conversationId = null) {
+  await ensureDiskCacheLoaded();
   let cid = conversationId && GUID_RE.test(conversationId) ? conversationId : null;
   if (!cid) {
     cid = await resolveFallbackConversationId();
@@ -252,8 +291,8 @@ export async function collectChatMetrics(conversationId = null) {
   const traj = trajRes?.trajectory;
   if (!traj) {
     if (lastMetricsByCid.has(cid)) {
-      const cached = lastMetricsByCid.get(cid);
-      return { ...cached, quota: quota || cached.quota, isWarmingUp: true };
+      const cached = lastMetricsByCid.get(cid).data;
+      return { ...cached, isRunning: false, isCached: true, quota: quota || cached.quota };
     }
     return { ok: false, conversationId: cid, error: 'trajectory-unavailable', context: null, speed: null, quota };
   }
@@ -399,6 +438,6 @@ export async function collectChatMetrics(conversationId = null) {
     },
     quota,
   };
-  lastMetricsByCid.set(cid, out);
+  saveMetricsToCache(cid, out);
   return out;
 }

@@ -18,10 +18,12 @@ export function buildWidgetScript(bindingName) {
       if (pending.size >= 8) return resolve(null);
       const id = ++seq;
       const timer = setTimeout(() => {
+        const cur = pending.get(id);
+        if (cur?.fallbackTimer) clearTimeout(cur.fallbackTimer);
         pending.delete(id);
-        resolve(null);
+        resolve(cur?.fallbackData ?? null);
       }, 6000);
-      pending.set(id, { resolve, timer });
+      pending.set(id, { resolve, timer, fallbackTimer: null, fallbackData: null });
       try {
         window[BINDING](JSON.stringify({ id, type, payload }));
       } catch {
@@ -35,7 +37,22 @@ export function buildWidgetScript(bindingName) {
   window.__agyChatMetricsResolve = (id, data) => {
     const item = pending.get(id);
     if (!item) return;
+    if (!data || !data.ok) {
+      // Allow live sidecar to supersede an early error from a stale/warming instance.
+      if (!item.fallbackData) item.fallbackData = data;
+      if (!item.fallbackTimer) {
+        item.fallbackTimer = setTimeout(() => {
+          const cur = pending.get(id);
+          if (!cur) return;
+          clearTimeout(cur.timer);
+          pending.delete(id);
+          cur.resolve(cur.fallbackData ?? null);
+        }, 650);
+      }
+      return;
+    }
     clearTimeout(item.timer);
+    if (item.fallbackTimer) clearTimeout(item.fallbackTimer);
     pending.delete(id);
     item.resolve(data);
   };
@@ -589,6 +606,7 @@ export function buildWidgetScript(bindingName) {
 
     let lastCid = undefined;
     let inflight = false;
+    let warmupTimer = null;
 
     async function poll() {
       if (inflight || !host.isConnected) return;
@@ -601,8 +619,11 @@ export function buildWidgetScript(bindingName) {
         const res = await callHost('metrics', { conversationId: cid });
         if (res && res.ok) {
           render(res);
-        } else if (!lastData?.ok) {
-          setTimeout(() => poll(), 800);
+          if (res.isCached && !warmupTimer) {
+            warmupTimer = setTimeout(() => { warmupTimer = null; poll(); }, 800);
+          }
+        } else if (!lastData?.ok && !warmupTimer) {
+          warmupTimer = setTimeout(() => { warmupTimer = null; poll(); }, 800);
         }
       } finally {
         inflight = false;
@@ -618,6 +639,7 @@ export function buildWidgetScript(bindingName) {
       syncTheme,
       get isRunning() { return Boolean(lastData?.isRunning); },
       dispose() {
+        if (warmupTimer) clearTimeout(warmupTimer);
         document.removeEventListener('click', onDocClick);
         host.remove();
       },

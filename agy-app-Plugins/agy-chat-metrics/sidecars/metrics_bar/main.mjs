@@ -1,5 +1,6 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import http from 'node:http';
+import net from 'node:net';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { collectChatMetrics } from './collector.mjs';
@@ -9,6 +10,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const BINDING = '__agyChatMetricsCall';
 const LOOPBACK = new Set(['127.0.0.1', 'localhost', '[::1]']);
 const STATUS_FILE = join(__dirname, 'status.json');
+const INSTANCES_FILE = join(__dirname, 'instances.json');
+const MY_LS_ADDR = (process.env.ANTIGRAVITY_LS_ADDRESS || '').trim();
 
 function getProfileDir() {
   if (process.platform === 'win32') {
@@ -168,6 +171,116 @@ class CdpClient {
 const sessions = new Map();
 const widgetCode = buildWidgetScript(BINDING);
 let lastStatus = '';
+let lsMissCount = 0;
+let exiting = false;
+
+function probeTcpPort(addr, timeoutMs = 700) {
+  if (!addr) return Promise.resolve(true);
+  const sep = addr.lastIndexOf(':');
+  if (sep <= 0) return Promise.resolve(false);
+  const host = addr.slice(0, sep).replace(/^\[|\]$/g, '');
+  const port = parseInt(addr.slice(sep + 1), 10);
+  if (!host || !Number.isInteger(port) || port <= 0) return Promise.resolve(false);
+
+  return new Promise((resolve) => {
+    const socket = net.createConnection({ host, port });
+    let done = false;
+    const finish = (ok) => {
+      if (done) return;
+      done = true;
+      try { socket.destroy(); } catch {}
+      resolve(ok);
+    };
+    socket.setTimeout(timeoutMs);
+    socket.once('connect', () => finish(true));
+    socket.once('timeout', () => finish(false));
+    socket.once('error', () => finish(false));
+  });
+}
+
+function isPidAlive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return err?.code === 'EPERM';
+  }
+}
+
+async function readInstances() {
+  try {
+    const raw = await readFile(INSTANCES_FILE, 'utf8');
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr : [];
+  } catch {
+    return [];
+  }
+}
+
+async function reconcileInstancesOnBoot() {
+  const existing = await readInstances();
+  const survivors = [];
+  for (const item of existing) {
+    const pid = Number(item?.pid);
+    if (!pid || pid === process.pid || !isPidAlive(pid)) continue;
+    const itemLs = String(item?.lsAddr || '').trim();
+    const isDuplicate = itemLs === MY_LS_ADDR;
+    const isDeadLs = itemLs ? !(await probeTcpPort(itemLs, 400)) : true;
+    if (isDuplicate || isDeadLs) {
+      try { process.kill(pid, 'SIGTERM'); } catch {}
+      continue;
+    }
+    survivors.push(item);
+  }
+  survivors.push({ pid: process.pid, lsAddr: MY_LS_ADDR, startedAt: Date.now() });
+  try {
+    await writeFile(INSTANCES_FILE, JSON.stringify(survivors, null, 2), 'utf8');
+  } catch {}
+}
+
+async function isSupersededOrDeadLs() {
+  if (MY_LS_ADDR) {
+    const alive = await probeTcpPort(MY_LS_ADDR, 800);
+    if (!alive) {
+      lsMissCount += 1;
+      if (lsMissCount >= 2) return true;
+    } else {
+      lsMissCount = 0;
+    }
+  }
+  const list = await readInstances();
+  const sameLs = list.filter((x) => String(x?.lsAddr || '').trim() === MY_LS_ADDR && Number(x?.pid) !== process.pid);
+  for (const other of sameLs) {
+    const opid = Number(other.pid);
+    if (isPidAlive(opid) && Number(other.startedAt || 0) > 0) {
+      const mine = list.find((x) => Number(x?.pid) === process.pid);
+      if (mine && Number(other.startedAt) > Number(mine.startedAt || 0)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+async function removeSelfFromInstances() {
+  const list = await readInstances();
+  const filtered = list.filter((x) => Number(x?.pid) !== process.pid);
+  try {
+    await writeFile(INSTANCES_FILE, JSON.stringify(filtered, null, 2), 'utf8');
+  } catch {}
+}
+
+async function quietExit() {
+  if (exiting) return;
+  exiting = true;
+  for (const client of sessions.values()) {
+    client.close();
+  }
+  sessions.clear();
+  await removeSelfFromInstances();
+  process.exit(0);
+}
 
 async function writeStatus(state, detail) {
   const key = `${state}:${detail}:${sessions.size}`;
@@ -207,6 +320,11 @@ async function handleCdpEvent(client, msg) {
       return;
     }
     if (!req || !req.id) return;
+    if (MY_LS_ADDR && !(await probeTcpPort(MY_LS_ADDR, 400))) {
+      // Never hijack responses if our parent Language Server is dead.
+      void quietExit();
+      return;
+    }
     let result = null;
     try {
       if (req.type === 'metrics') {
@@ -248,9 +366,14 @@ async function attachTarget(target) {
 
 let ticking = false;
 async function tick() {
-  if (ticking) return;
+  if (ticking || exiting) return;
   ticking = true;
   try {
+    if (await isSupersededOrDeadLs()) {
+      await quietExit();
+      return;
+    }
+
     const targets = await discoverTargets();
     const activeUrls = new Set(targets.map((t) => t.webSocketDebuggerUrl));
 
@@ -307,6 +430,8 @@ async function tick() {
 }
 
 async function cleanupAndExit() {
+  if (exiting) return;
+  exiting = true;
   for (const client of sessions.values()) {
     try {
       if (client.scriptId) {
@@ -316,12 +441,16 @@ async function cleanupAndExit() {
     } catch {}
     client.close();
   }
+  await removeSelfFromInstances();
   process.exit(0);
 }
 
 process.on('SIGINT', () => void cleanupAndExit());
 process.on('SIGTERM', () => void cleanupAndExit());
 
-void tick();
-setInterval(() => void tick(), 3000);
-console.log('[agy-chat-metrics] sidecar injector started');
+(async () => {
+  await reconcileInstancesOnBoot();
+  void tick();
+  setInterval(() => void tick(), 3000);
+  console.log('[agy-chat-metrics] sidecar injector started');
+})();
