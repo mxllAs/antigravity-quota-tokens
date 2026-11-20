@@ -1,6 +1,7 @@
 // Self-contained Periodic Table model picker & reasoning effort slider injected via CDP.
-export function buildPickerWidgetScript() {
+export function buildPickerWidgetScript(bindingName = '__agyModelPickerCall') {
   return `(() => {
+  const BINDING = ${JSON.stringify(bindingName)};
   const HOST_ATTR = 'data-agy-model-picker-overlay';
   const TRIGGER_SEL = '[data-testid="model-selector-trigger"]';
   const VIEW_STORAGE_KEY = 'agyModelPicker:viewMode:v2';
@@ -107,6 +108,74 @@ export function buildPickerWidgetScript() {
 
   if (window.__agyModelPickerDispose) {
     try { window.__agyModelPickerDispose(); } catch {}
+  }
+
+  const quotaPending = new Map();
+  let quotaSeq = 0;
+  let liveQuotaSnapshot = null;
+
+  function callHostQuota() {
+    return new Promise((resolve) => {
+      if (typeof window[BINDING] !== 'function' || quotaPending.size >= 6) {
+        return resolve(null);
+      }
+      const id = ++quotaSeq;
+      const timer = setTimeout(() => {
+        const cur = quotaPending.get(id);
+        if (cur?.fallbackTimer) clearTimeout(cur.fallbackTimer);
+        quotaPending.delete(id);
+        resolve(cur?.fallbackData ?? null);
+      }, 3000);
+      quotaPending.set(id, { resolve, timer, fallbackTimer: null, fallbackData: null });
+      try {
+        window[BINDING](JSON.stringify({ id, type: 'quota' }));
+      } catch {
+        clearTimeout(timer);
+        quotaPending.delete(id);
+        resolve(null);
+      }
+    });
+  }
+
+  window.__agyModelPickerResolve = (id, data) => {
+    const item = quotaPending.get(id);
+    if (!item) return;
+    if (!data || !data.ok) {
+      if (!item.fallbackData) item.fallbackData = data;
+      if (!item.fallbackTimer) {
+        item.fallbackTimer = setTimeout(() => {
+          const cur = quotaPending.get(id);
+          if (!cur) return;
+          clearTimeout(cur.timer);
+          quotaPending.delete(id);
+          cur.resolve(cur.fallbackData ?? null);
+        }, 500);
+      }
+      return;
+    }
+    clearTimeout(item.timer);
+    if (item.fallbackTimer) clearTimeout(item.fallbackTimer);
+    quotaPending.delete(id);
+    item.resolve(data);
+  };
+
+  function lookupLiveSummaryQuota(baseName) {
+    if (!liveQuotaSnapshot?.ok || !baseName) return null;
+    if (liveQuotaSnapshot.byModelBase && liveQuotaSnapshot.byModelBase[baseName]) {
+      return liveQuotaSnapshot.byModelBase[baseName];
+    }
+    const groups = Array.isArray(liveQuotaSnapshot.groups) ? liveQuotaSnapshot.groups : [];
+    const low = baseName.toLowerCase();
+    if (low.includes('argon')) {
+      return groups.find((g) => /argon/i.test(g.name)) || null;
+    }
+    if (low.includes('claude') || low.includes('gpt')) {
+      return groups.find((g) => /claude|gpt/i.test(g.name)) || null;
+    }
+    if (low.includes('gemini') || low.includes('orchestrator')) {
+      return groups.find((g) => /gemini\\s*models/i.test(g.name)) || null;
+    }
+    return null;
   }
 
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -296,6 +365,15 @@ export function buildPickerWidgetScript() {
     }
 
     for (const entry of byBase.values()) {
+      if (!entry.allDisabled && liveQuotaSnapshot?.ok) {
+        const live = lookupLiveSummaryQuota(entry.baseName);
+        if (live && typeof live.remainingFraction === 'number') {
+          entry.quotaFraction = live.remainingFraction;
+          if (live.resetTimeSeconds != null) {
+            entry.resetTimeSeconds = live.resetTimeSeconds;
+          }
+        }
+      }
       entry.tiers = TIER_ORDER
         .filter((t) => entry.tiersByName.has(t))
         .map((t) => ({ tier: t, opt: entry.tiersByName.get(t) }));
@@ -945,14 +1023,27 @@ export function buildPickerWidgetScript() {
 
   function triggerQuotaRefresh(ctx) {
     const liveCtx = findModelContext(activeBtn) || ctx;
+    const tasks = [];
     if (liveCtx && typeof liveCtx.refreshModels === 'function') {
-      return Promise.resolve(liveCtx.refreshModels()).then(() => {
-        if (overlayHost.style.display === 'block') {
-          render();
-        }
-      }).catch(() => {});
+      tasks.push(
+        Promise.resolve(liveCtx.refreshModels()).catch(() => {})
+      );
     }
-    return Promise.resolve();
+    tasks.push(
+      callHostQuota().then((snap) => {
+        if (snap && snap.ok) {
+          liveQuotaSnapshot = snap;
+          if (overlayHost.style.display === 'block') {
+            render();
+          }
+        }
+      }).catch(() => {})
+    );
+    return Promise.all(tasks).then(() => {
+      if (overlayHost.style.display === 'block') {
+        render();
+      }
+    });
   }
 
   function startAutoRefresh(ctx) {
@@ -1000,6 +1091,7 @@ export function buildPickerWidgetScript() {
     if (!entry || entry.allDisabled) {
       hoveredNote = localizeDescription(entry) || (entry?.baseName + ' 当前不可用');
       render();
+      triggerQuotaRefresh(ctx);
       return;
     }
     let targetOpt = null;
@@ -1016,6 +1108,7 @@ export function buildPickerWidgetScript() {
     }
 
     applySelectedOption(ctx, targetOpt);
+    triggerQuotaRefresh(ctx);
   }
 
   function render() {
@@ -1507,6 +1600,7 @@ export function buildPickerWidgetScript() {
     overlayHost.remove();
     delete window.__agyModelPickerInstalled;
     delete window.__agyModelPickerToggle;
+    delete window.__agyModelPickerResolve;
     delete window.__agyModelPickerDispose;
   };
 })();`;

@@ -1,11 +1,13 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import http from 'node:http';
+import https from 'node:https';
 import net from 'node:net';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildPickerWidgetScript } from './widget.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const BINDING = '__agyModelPickerCall';
 const LOOPBACK = new Set(['127.0.0.1', 'localhost', '[::1]']);
 const STATUS_FILE = join(__dirname, 'status.json');
 const INSTANCES_FILE = join(__dirname, 'instances.json');
@@ -166,7 +168,7 @@ class CdpClient {
 }
 
 const sessions = new Map();
-const widgetCode = buildPickerWidgetScript();
+const widgetCode = buildPickerWidgetScript(BINDING);
 let lastStatus = '';
 let lsMissCount = 0;
 let exiting = false;
@@ -279,6 +281,120 @@ async function quietExit() {
   process.exit(0);
 }
 
+let preferredProtocol = 'http';
+
+function callLsRpc(method, bodyObj = {}, timeoutMs = 2500) {
+  const lsAddr = process.env.ANTIGRAVITY_LS_ADDRESS;
+  const csrf = process.env.ANTIGRAVITY_CSRF_TOKEN;
+  if (!lsAddr || !csrf) return Promise.resolve(null);
+
+  const sep = lsAddr.lastIndexOf(':');
+  if (sep <= 0) return Promise.resolve(null);
+  const host = lsAddr.slice(0, sep).replace(/^\[|\]$/g, '');
+  const port = parseInt(lsAddr.slice(sep + 1), 10);
+  if (!host || !port) return Promise.resolve(null);
+
+  const tryProto = (proto) =>
+    new Promise((resolve) => {
+      const client = proto === 'https' ? https : http;
+      const payload = JSON.stringify(bodyObj);
+      const req = client.request(
+        {
+          hostname: host,
+          port,
+          path: `/exa.language_server_pb.LanguageServerService/${method}`,
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Connect-Protocol-Version': '1',
+            'x-codeium-csrf-token': csrf,
+            'Content-Length': Buffer.byteLength(payload),
+          },
+          rejectUnauthorized: false,
+          timeout: timeoutMs,
+        },
+        (res) => {
+          let raw = '';
+          res.on('data', (chunk) => (raw += chunk));
+          res.on('end', () => {
+            if (res.statusCode === 200) {
+              try {
+                resolve(JSON.parse(raw));
+              } catch {
+                resolve(null);
+              }
+            } else {
+              resolve(null);
+            }
+          });
+        }
+      );
+      req.on('error', () => resolve(null));
+      req.on('timeout', () => {
+        req.destroy();
+        resolve(null);
+      });
+      req.write(payload);
+      req.end();
+    });
+
+  return tryProto(preferredProtocol).then(async (res) => {
+    if (res) return res;
+    const alt = preferredProtocol === 'http' ? 'https' : 'http';
+    const altRes = await tryProto(alt);
+    if (altRes) preferredProtocol = alt;
+    return altRes;
+  });
+}
+
+async function fetchLiveQuotaForPicker() {
+  const raw = await callLsRpc('RetrieveUserQuotaSummary', {});
+  const groups = raw?.response?.groups || raw?.groups;
+  if (!Array.isArray(groups)) {
+    return { ok: false, error: 'summary-unavailable' };
+  }
+
+  const byModelBase = {};
+  const parsedGroups = [];
+
+  for (const g of groups) {
+    const name = g.displayName || '';
+    const desc = g.description || '';
+    const buckets = Array.isArray(g.buckets) ? g.buckets : [];
+    const five = buckets.find((b) => b.window === '5h' || /5h/i.test(b.bucketId || ''));
+    const week = buckets.find((b) => b.window === 'weekly' || /weekly/i.test(b.bucketId || ''));
+    // Antigravity displays the 5-hour quota bucket when present (e.g. Gemini Models / 3P),
+    // and falls back to weekly when 5-hour does not apply (e.g. Gemini 4 Argon).
+    const primary = five || week || buckets[0] || null;
+    const remainingFraction = typeof primary?.remainingFraction === 'number' ? primary.remainingFraction : null;
+    const resetTimeSec = primary?.resetTime ? Math.floor(Date.parse(primary.resetTime) / 1000) : null;
+
+    const entry = {
+      name,
+      remainingFraction,
+      resetTimeSeconds: Number.isFinite(resetTimeSec) ? resetTimeSec : null,
+      fiveFraction: typeof five?.remainingFraction === 'number' ? five.remainingFraction : null,
+      weeklyFraction: typeof week?.remainingFraction === 'number' ? week.remainingFraction : null,
+    };
+    parsedGroups.push(entry);
+
+    const listMatch = desc.match(/Models within this group:\s*([^\n]+)/i);
+    if (listMatch) {
+      const names = listMatch[1].split(',').map((s) => s.trim()).filter(Boolean);
+      for (const modelName of names) {
+        byModelBase[modelName] = entry;
+      }
+    }
+  }
+
+  return {
+    ok: true,
+    fetchedAt: Date.now(),
+    byModelBase,
+    groups: parsedGroups,
+  };
+}
+
 async function writeStatus(state, detail) {
   const key = `${state}:${detail}:${sessions.size}`;
   if (key === lastStatus) return;
@@ -292,22 +408,53 @@ async function writeStatus(state, detail) {
   } catch {}
 }
 
-function handleCdpEvent(client, msg) {
+async function handleCdpEvent(client, msg) {
+  const p = msg.params || {};
   if (msg.method === 'Runtime.executionContextsCleared') {
     client.active = false;
+    return;
+  }
+  if (msg.method === 'Runtime.bindingCalled' && p.name === BINDING) {
+    let req;
+    try {
+      req = JSON.parse(p.payload);
+    } catch {
+      return;
+    }
+    if (!req || !req.id) return;
+    if (MY_LS_ADDR && !(await probeTcpPort(MY_LS_ADDR, 400))) {
+      void quietExit();
+      return;
+    }
+    let result = null;
+    try {
+      if (req.type === 'quota') {
+        result = await fetchLiveQuotaForPicker();
+      }
+    } catch (err) {
+      result = { ok: false, error: err?.message || 'quota-error' };
+    }
+    if (client.closed) return;
+    try {
+      await client.send('Runtime.evaluate', {
+        expression: `window.__agyModelPickerResolve?.(${Number(req.id)}, ${JSON.stringify(result)})`,
+        contextId: p.executionContextId,
+      });
+    } catch {}
   }
 }
 
 async function attachTarget(target) {
   const client = new CdpClient(
     target.webSocketDebuggerUrl,
-    (c, m) => handleCdpEvent(c, m),
+    (c, m) => void handleCdpEvent(c, m),
     (c) => sessions.delete(c.wsUrl)
   );
   await client.open();
   try {
     await client.send('Page.enable');
     await client.send('Runtime.enable');
+    await client.send('Runtime.addBinding', { name: BINDING });
     const res = await client.send('Page.addScriptToEvaluateOnNewDocument', { source: widgetCode });
     client.scriptId = res?.identifier || null;
     await client.send('Runtime.evaluate', { expression: widgetCode });
@@ -356,6 +503,7 @@ async function tick() {
         const v = evalRes?.result?.value;
         client.active = Boolean(v?.installed && v?.hasTrigger);
         if (v && !v.installed) {
+          await client.send('Runtime.addBinding', { name: BINDING });
           await client.send('Runtime.evaluate', { expression: widgetCode });
         }
       } catch {
