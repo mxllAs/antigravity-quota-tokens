@@ -1,0 +1,8 @@
+{
+  "command": "node",
+  "args": ["main.mjs"],
+  "restart_policy": "always",
+  "display_name": "Desktop ZH-CN Translator",
+  "description": "Non-invasively localizes Antigravity Desktop Settings, Sidebar, Top Menu, and Controls into Simplified Chinese via CDP.",
+  "has_web_ui": false
+}

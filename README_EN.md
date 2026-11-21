@@ -164,6 +164,18 @@ Press <kbd>Ctrl + ,</kbd> and search for `antigravityQuota`:
 
 ---
 
+## 🖥️ Antigravity Desktop Plugins (`agy-app-Plugins`)
+
+In addition to the root **Antigravity IDE (VS Code) VSIX extension**, this repository also maintains a dedicated suite of **Antigravity Desktop native plugins** under [`agy-app-Plugins/`](agy-app-Plugins/README.md) (automatically excluded from `.vsix` packaging via `.vscodeignore`):
+
+- [`agy-chat-metrics/`](agy-app-Plugins/agy-chat-metrics/README.md): Inline **Context (%)** & **Generation Speed (`tok/s`)** indicator in the Desktop chat composer bar;
+- [`agy-model-picker/`](agy-app-Plugins/agy-model-picker/README.md): Periodic table **Gemini 4 model & adaptive effort picker**;
+- [`agy-zh-cn/`](agy-app-Plugins/agy-zh-cn/README.md): Non-invasive **Simplified Chinese (`zh-CN`) localization** for Desktop Settings, Sidebar, and Top Menu with instant EN/中文 toggle.
+
+> 👉 **For installation and details, see**: [agy-app-Plugins/README.md](agy-app-Plugins/README.md) (deploy via `.\install.ps1` in PowerShell / `pwsh`).
+
+---
+
 ## 📦 Installation & Quick Start
 
 ### Method 1: Install from VSIX (Recommended)
