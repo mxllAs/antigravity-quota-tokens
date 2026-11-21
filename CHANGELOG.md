@@ -3,6 +3,26 @@
 本文档记录 **Antigravity Quota & Token Monitor** 扩展的所有重要版本更新。  
 本格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，并遵循 [语义化版本规范 (SemVer)](https://semver.org/lang/zh-CN/)。
 
+## [1.5.0] - 2026-11-21
+
+### ✨ 桌面端插件套件大版本扩展 (`agy-app-Plugins/`)
+* **新增 `agy-zh-cn` 桌面端非入侵式中文汉化插件**（[agy-zh-cn/README.md](agy-app-Plugins/agy-zh-cn/README.md)）：
+  * 通过 CDP Sidecar 实时汉化 Antigravity Desktop 设置面板（含 `General`、`Application`、`Appearance`、`Shortcuts`、`Notifications`、`Models`、`Browser` 等全部核心配置与配额/编排器文案）、左侧栏导航与顶部菜单栏，不修改官方 `app.asar`；
+  * 自动隔离代码块、聊天消息与用户项目名称，设置页右上角内置 `中 / EN` 即时切换开关，关闭插件时基于 `WeakMap` 无损还原英文界面。
+* **新增 `agy-model-picker` 周期表模型与推理强度选择器**（[agy-model-picker/README.md](agy-app-Plugins/agy-model-picker/README.md)）：
+  * 在桌面端左键呼出 Gemini 4 元素周期表 + 自适应推理强度滑块，支持打开即自动刷新权威实时配额。
+* **优化桌面端 Sidecar 稳定性与冷启动缓存**：
+  * 避免僵尸 Sidecar 抢占 CDP 端口，新增 `localStorage` 与跨端口指标缓存，消除冷启动空白等待。
+
+### 🎨 IDE 扩展界面与状态栏精简升级 (`1.4.10` ~ `1.5.0`)
+* **全量图标矢量化**：将侧边栏 Webview（[index.html](src/views/index.html) / [app.js](src/views/app.js) / [style.css](src/views/style.css)）以及状态栏/QuickPick 弹窗（[extension.js](extension.js)）中的 Emoji 统一替换为内联 SVG 图标（`UI_ICONS`）与 VS Code 原生 `$(codicon)` 图标。
+* **新增底部状态栏紧凑模式**（[package.json](package.json) / [extension.js](extension.js)）：
+  * 新增配置项 `antigravityQuota.statusBarStyle`（默认 `compact` 精简展示，可选 `detailed`），大幅缩短底部状态栏占用宽度。
+* **云端同步设备标识增强**（[token_archive.js](src/token_archive.js)）：
+  * 导出同步载荷新增 `device_id: os.hostname()`，便于多设备汇总识别。
+
+---
+
 ## [1.4.9] - 2026-11-19
 
 ### ✨ 新增功能与模型适配 (Features & Model Support)

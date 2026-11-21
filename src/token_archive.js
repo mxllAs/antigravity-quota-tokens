@@ -496,6 +496,7 @@ function exportDataForSync(archivePath, mode = 'public') {
     version: archive.version,
     updated_at: archive.updated_at,
     source: 'gemini',
+    device_id: os.hostname(),
     summary: archive.summary,
     daily_map: archive.daily_map,
     all_daily: Object.values(archive.daily_map || {}).sort((a, b) => a.date.localeCompare(b.date)),

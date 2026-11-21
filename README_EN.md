@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-v1.2.0-3b82f6.svg" alt="version" />
+  <img src="https://img.shields.io/badge/version-v1.5.0-3b82f6.svg" alt="version" />
   <img src="https://img.shields.io/badge/platform-Google%20Antigravity%20IDE-f59e0b.svg" alt="platform" />
   <img src="https://img.shields.io/badge/license-MIT-10b981.svg" alt="license" />
   <img src="https://img.shields.io/badge/security-100%25%20Local%20Readonly-purple.svg" alt="security" />
@@ -180,10 +180,10 @@ In addition to the root **Antigravity IDE (VS Code) VSIX extension**, this repos
 
 ### Method 1: Install from VSIX (Recommended)
 
-1. Download the latest packaged release: `releases/antigravity-quota-tokens-1.0.16.vsix`;
+1. Download the latest packaged release: `releases/antigravity-quota-tokens-1.5.0.vsix`;
 2. In Antigravity IDE, press <kbd>Ctrl + Shift + X</kbd> to open the Extensions view;
 3. Click the `...` menu on the top-right corner and select **"Install from VSIX..."**;
-4. Select `releases/antigravity-quota-tokens-1.0.16.vsix`;
+4. Select `releases/antigravity-quota-tokens-1.5.0.vsix`;
 5. Click **"Reload Window"** when prompted.
 
 ### Method 2: Build from Source
