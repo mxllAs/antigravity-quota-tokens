@@ -1,0 +1,7 @@
+{
+  "name": "agy-zh-cn",
+  "displayName": "Antigravity Desktop 中文汉化",
+  "description": "非入侵式实时汉化 Antigravity 桌面端设置面板、侧边栏导航、顶部菜单与弹出选项（不修改 app.asar，支持随时开关与中英即时切换）。",
+  "version": "1.0.0",
+  "logo": "assets/logo.svg"
+}

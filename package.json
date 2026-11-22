@@ -2,7 +2,7 @@
   "name": "antigravity-quota-tokens",
   "displayName": "Antigravity Quota & Token Monitor",
   "description": "Lightweight status bar & activity bar monitor for Google Antigravity model quotas and one-click detailed token analytics.",
-  "version": "1.4.9",
+  "version": "1.5.0",
   "publisher": "isArray",
   "license": "MIT",
   "repository": {
@@ -124,6 +124,19 @@
           "type": "boolean",
           "default": true,
           "description": "是否在底部状态栏显示实时配额指示器。"
+        },
+        "antigravityQuota.statusBarStyle": {
+          "type": "string",
+          "enum": [
+            "compact",
+            "detailed"
+          ],
+          "enumDescriptions": [
+            "精简模式：短缩写+图标，节省底部状态栏空间（悬停查看完整详情）",
+            "详细模式：显示完整池名称与全部重置倒计时"
+          ],
+          "default": "compact",
+          "description": "底部状态栏显示风格（compact 精简 / detailed 详细）。"
         },
         "antigravityQuota.autoRefreshSeconds": {
           "type": "number",

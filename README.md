@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-v1.2.0-3b82f6.svg" alt="version" />
+  <img src="https://img.shields.io/badge/version-v1.5.0-3b82f6.svg" alt="version" />
   <img src="https://img.shields.io/badge/platform-Google%20Antigravity%20IDE-f59e0b.svg" alt="platform" />
   <img src="https://img.shields.io/badge/license-MIT-10b981.svg" alt="license" />
   <img src="https://img.shields.io/badge/security-100%25%20Local%20Readonly-purple.svg" alt="security" />
@@ -165,11 +165,23 @@ Google Antigravity 采用双轨额度机制。本插件通过底层 Connect-RPC 
 
 ---
 
+## 🖥️ Antigravity 桌面端插件目录 (`agy-app-Plugins`)
+
+本仓库除根目录下的 **Antigravity IDE (VS Code) VSIX 扩展** 外，还在 [`agy-app-Plugins/`](agy-app-Plugins/README.md) 目录独立维护一套 **Antigravity Desktop（桌面端）原生插件集合**（打包 `.vsix` 时已通过 `.vscodeignore` 自动忽略，互不干扰）：
+
+- [`agy-chat-metrics/`](agy-app-Plugins/agy-chat-metrics/README.md)：聊天框底栏内嵌显示当前会话**上下文占比 (%)** 与 **Token 生成速度 (`tok/s`)**；
+- [`agy-model-picker/`](agy-app-Plugins/agy-model-picker/README.md)：左键呼出 **Gemini 4 元素周期表 + 自适应推理强度滑块**；
+- [`agy-zh-cn/`](agy-app-Plugins/agy-zh-cn/README.md)：桌面端非入侵式**简体中文实时汉化**（设置面板、侧边栏与顶部菜单，支持随时中/英切换）。
+
+> 👉 **安装方式与详细说明请查看**：[agy-app-Plugins/README.md](agy-app-Plugins/README.md)（支持通过 `pwsh` / PowerShell 进入 `agy-app-Plugins/` 目录一键执行 `.\install.ps1` 部署）。
+
+---
+
 ## 📦 安装与快速开始
 
 ### 方式 1：直接安装 VSIX 安装包（推荐）
 
-1. 下载最新的打包文件：`releases/antigravity-quota-tokens-1.0.16.vsix`；
+1. 下载最新的打包文件：`releases/antigravity-quota-tokens-1.5.0.vsix`；
 2. 打开 Antigravity IDE，按快捷键 <kbd>Ctrl + Shift + X</kbd> 打开扩展面板；
 3. 点击面板右上角的 `...` 菜单，选择 **“从 VSIX 安装... (Install from VSIX...)”**；
 4. 选择该 `.vsix` 文件安装，完成后点击右下角 **“重新加载 (Reload Window)”** 即可立即享受。

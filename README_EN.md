@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-v1.2.0-3b82f6.svg" alt="version" />
+  <img src="https://img.shields.io/badge/version-v1.5.0-3b82f6.svg" alt="version" />
   <img src="https://img.shields.io/badge/platform-Google%20Antigravity%20IDE-f59e0b.svg" alt="platform" />
   <img src="https://img.shields.io/badge/license-MIT-10b981.svg" alt="license" />
   <img src="https://img.shields.io/badge/security-100%25%20Local%20Readonly-purple.svg" alt="security" />
@@ -164,14 +164,26 @@ Press <kbd>Ctrl + ,</kbd> and search for `antigravityQuota`:
 
 ---
 
+## 🖥️ Antigravity Desktop Plugins (`agy-app-Plugins`)
+
+In addition to the root **Antigravity IDE (VS Code) VSIX extension**, this repository also maintains a dedicated suite of **Antigravity Desktop native plugins** under [`agy-app-Plugins/`](agy-app-Plugins/README.md) (automatically excluded from `.vsix` packaging via `.vscodeignore`):
+
+- [`agy-chat-metrics/`](agy-app-Plugins/agy-chat-metrics/README.md): Inline **Context (%)** & **Generation Speed (`tok/s`)** indicator in the Desktop chat composer bar;
+- [`agy-model-picker/`](agy-app-Plugins/agy-model-picker/README.md): Periodic table **Gemini 4 model & adaptive effort picker**;
+- [`agy-zh-cn/`](agy-app-Plugins/agy-zh-cn/README.md): Non-invasive **Simplified Chinese (`zh-CN`) localization** for Desktop Settings, Sidebar, and Top Menu with instant EN/中文 toggle.
+
+> 👉 **For installation and details, see**: [agy-app-Plugins/README.md](agy-app-Plugins/README.md) (deploy via `.\install.ps1` in PowerShell / `pwsh`).
+
+---
+
 ## 📦 Installation & Quick Start
 
 ### Method 1: Install from VSIX (Recommended)
 
-1. Download the latest packaged release: `releases/antigravity-quota-tokens-1.0.16.vsix`;
+1. Download the latest packaged release: `releases/antigravity-quota-tokens-1.5.0.vsix`;
 2. In Antigravity IDE, press <kbd>Ctrl + Shift + X</kbd> to open the Extensions view;
 3. Click the `...` menu on the top-right corner and select **"Install from VSIX..."**;
-4. Select `releases/antigravity-quota-tokens-1.0.16.vsix`;
+4. Select `releases/antigravity-quota-tokens-1.5.0.vsix`;
 5. Click **"Reload Window"** when prompted.
 
 ### Method 2: Build from Source

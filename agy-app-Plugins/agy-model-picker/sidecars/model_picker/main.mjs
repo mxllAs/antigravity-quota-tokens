@@ -1,43 +1,59 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import http from 'node:http';
+import https from 'node:https';
 import net from 'node:net';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildPickerWidgetScript } from './widget.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const BINDING = '__agyModelPickerCall';
 const LOOPBACK = new Set(['127.0.0.1', 'localhost', '[::1]']);
 const STATUS_FILE = join(__dirname, 'status.json');
+const INSTANCES_FILE = join(__dirname, 'instances.json');
+const MY_LS_ADDR = (process.env.ANTIGRAVITY_LS_ADDRESS || '').trim();
 
 function getProfileDir() {
   if (process.platform === 'win32') {
-    const appData = process.env.APPDATA || join(process.env.USERPROFILE || '', 'AppData', 'Roaming');
+    const appData =
+      process.env.APPDATA ||
+      join(process.env.USERPROFILE || '', 'AppData', 'Roaming');
     return join(appData, 'Antigravity');
   }
   if (process.platform === 'darwin') {
-    return join(process.env.HOME || '', 'Library', 'Application Support', 'Antigravity');
+    return join(
+      process.env.HOME || '',
+      'Library',
+      'Application Support',
+      'Antigravity'
+    );
   }
   return join(process.env.HOME || '', '.config', 'Antigravity');
 }
 
 function httpGetJson(port, path) {
   return new Promise((resolve, reject) => {
-    const req = http.request({ hostname: '127.0.0.1', port, path, method: 'GET' }, (res) => {
-      let body = '';
-      res.setEncoding('utf8');
-      res.on('data', (chunk) => {
-        body += chunk;
-        if (body.length > 1048576) req.destroy(new Error('Response too large'));
-      });
-      res.on('end', () => {
-        if (res.statusCode !== 200) return reject(new Error(`HTTP ${res.statusCode}`));
-        try {
-          resolve(JSON.parse(body));
-        } catch (err) {
-          reject(err);
-        }
-      });
-    });
+    const req = http.request(
+      { hostname: '127.0.0.1', port, path, method: 'GET' },
+      (res) => {
+        let body = '';
+        res.setEncoding('utf8');
+        res.on('data', (chunk) => {
+          body += chunk;
+          if (body.length > 1048576)
+            req.destroy(new Error('Response too large'));
+        });
+        res.on('end', () => {
+          if (res.statusCode !== 200)
+            return reject(new Error(`HTTP ${res.statusCode}`));
+          try {
+            resolve(JSON.parse(body));
+          } catch (err) {
+            reject(err);
+          }
+        });
+      }
+    );
     req.on('error', reject);
     req.setTimeout(2000, () => req.destroy(new Error('Timeout')));
     req.end();
@@ -89,14 +105,16 @@ class CdpClient {
     this.ws = new WebSocket(this.wsUrl);
     this.ws.addEventListener('message', (event) => {
       try {
-        if (typeof event.data !== 'string' || event.data.length > 2097152) return;
+        if (typeof event.data !== 'string' || event.data.length > 2097152)
+          return;
         const msg = JSON.parse(event.data);
         if (msg.id) {
           const item = this.pending.get(msg.id);
           if (!item) return;
           this.pending.delete(msg.id);
           clearTimeout(item.timer);
-          if (msg.error) item.reject(new Error(msg.error.message || String(msg.error.code)));
+          if (msg.error)
+            item.reject(new Error(msg.error.message || String(msg.error.code)));
           else item.resolve(msg.result || {});
         } else if (msg.method) {
           this.onEvent(this, msg);
@@ -164,8 +182,263 @@ class CdpClient {
 }
 
 const sessions = new Map();
-const widgetCode = buildPickerWidgetScript();
+const widgetCode = buildPickerWidgetScript(BINDING);
 let lastStatus = '';
+let lsMissCount = 0;
+let exiting = false;
+
+function probeTcpPort(addr, timeoutMs = 700) {
+  if (!addr) return Promise.resolve(true);
+  const sep = addr.lastIndexOf(':');
+  if (sep <= 0) return Promise.resolve(false);
+  const host = addr.slice(0, sep).replace(/^\[|\]$/g, '');
+  const port = parseInt(addr.slice(sep + 1), 10);
+  if (!host || !Number.isInteger(port) || port <= 0)
+    return Promise.resolve(false);
+
+  return new Promise((resolve) => {
+    const socket = net.createConnection({ host, port });
+    let done = false;
+    const finish = (ok) => {
+      if (done) return;
+      done = true;
+      try {
+        socket.destroy();
+      } catch {}
+      resolve(ok);
+    };
+    socket.setTimeout(timeoutMs);
+    socket.once('connect', () => finish(true));
+    socket.once('timeout', () => finish(false));
+    socket.once('error', () => finish(false));
+  });
+}
+
+function isPidAlive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return err?.code === 'EPERM';
+  }
+}
+
+async function readInstances() {
+  try {
+    const raw = await readFile(INSTANCES_FILE, 'utf8');
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr : [];
+  } catch {
+    return [];
+  }
+}
+
+async function reconcileInstancesOnBoot() {
+  const existing = await readInstances();
+  const survivors = [];
+  for (const item of existing) {
+    const pid = Number(item?.pid);
+    if (!pid || pid === process.pid || !isPidAlive(pid)) continue;
+    const itemLs = String(item?.lsAddr || '').trim();
+    const isDuplicate = itemLs === MY_LS_ADDR;
+    const isDeadLs = itemLs ? !(await probeTcpPort(itemLs, 400)) : true;
+    if (isDuplicate || isDeadLs) {
+      try {
+        process.kill(pid, 'SIGTERM');
+      } catch {}
+      continue;
+    }
+    survivors.push(item);
+  }
+  survivors.push({
+    pid: process.pid,
+    lsAddr: MY_LS_ADDR,
+    startedAt: Date.now(),
+  });
+  try {
+    await writeFile(INSTANCES_FILE, JSON.stringify(survivors, null, 2), 'utf8');
+  } catch {}
+}
+
+async function isSupersededOrDeadLs() {
+  if (MY_LS_ADDR) {
+    const alive = await probeTcpPort(MY_LS_ADDR, 800);
+    if (!alive) {
+      lsMissCount += 1;
+      if (lsMissCount >= 2) return true;
+    } else {
+      lsMissCount = 0;
+    }
+  }
+  const list = await readInstances();
+  const sameLs = list.filter(
+    (x) =>
+      String(x?.lsAddr || '').trim() === MY_LS_ADDR &&
+      Number(x?.pid) !== process.pid
+  );
+  for (const other of sameLs) {
+    const opid = Number(other.pid);
+    if (isPidAlive(opid) && Number(other.startedAt || 0) > 0) {
+      const mine = list.find((x) => Number(x?.pid) === process.pid);
+      if (mine && Number(other.startedAt) > Number(mine.startedAt || 0)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+async function removeSelfFromInstances() {
+  const list = await readInstances();
+  const filtered = list.filter((x) => Number(x?.pid) !== process.pid);
+  try {
+    await writeFile(INSTANCES_FILE, JSON.stringify(filtered, null, 2), 'utf8');
+  } catch {}
+}
+
+async function quietExit() {
+  if (exiting) return;
+  exiting = true;
+  for (const client of sessions.values()) {
+    client.close();
+  }
+  sessions.clear();
+  await removeSelfFromInstances();
+  process.exit(0);
+}
+
+let preferredProtocol = 'http';
+
+function callLsRpc(method, bodyObj = {}, timeoutMs = 2500) {
+  const lsAddr = process.env.ANTIGRAVITY_LS_ADDRESS;
+  const csrf = process.env.ANTIGRAVITY_CSRF_TOKEN;
+  if (!lsAddr || !csrf) return Promise.resolve(null);
+
+  const sep = lsAddr.lastIndexOf(':');
+  if (sep <= 0) return Promise.resolve(null);
+  const host = lsAddr.slice(0, sep).replace(/^\[|\]$/g, '');
+  const port = parseInt(lsAddr.slice(sep + 1), 10);
+  if (!host || !port) return Promise.resolve(null);
+
+  const tryProto = (proto) =>
+    new Promise((resolve) => {
+      const client = proto === 'https' ? https : http;
+      const payload = JSON.stringify(bodyObj);
+      const req = client.request(
+        {
+          hostname: host,
+          port,
+          path: `/exa.language_server_pb.LanguageServerService/${method}`,
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Connect-Protocol-Version': '1',
+            'x-codeium-csrf-token': csrf,
+            'Content-Length': Buffer.byteLength(payload),
+          },
+          rejectUnauthorized: false,
+          timeout: timeoutMs,
+        },
+        (res) => {
+          let raw = '';
+          res.on('data', (chunk) => (raw += chunk));
+          res.on('end', () => {
+            if (res.statusCode === 200) {
+              try {
+                resolve(JSON.parse(raw));
+              } catch {
+                resolve(null);
+              }
+            } else {
+              resolve(null);
+            }
+          });
+        }
+      );
+      req.on('error', () => resolve(null));
+      req.on('timeout', () => {
+        req.destroy();
+        resolve(null);
+      });
+      req.write(payload);
+      req.end();
+    });
+
+  return tryProto(preferredProtocol).then(async (res) => {
+    if (res) return res;
+    const alt = preferredProtocol === 'http' ? 'https' : 'http';
+    const altRes = await tryProto(alt);
+    if (altRes) preferredProtocol = alt;
+    return altRes;
+  });
+}
+
+async function fetchLiveQuotaForPicker() {
+  const raw = await callLsRpc('RetrieveUserQuotaSummary', {});
+  const groups = raw?.response?.groups || raw?.groups;
+  if (!Array.isArray(groups)) {
+    return { ok: false, error: 'summary-unavailable' };
+  }
+
+  const byModelBase = {};
+  const parsedGroups = [];
+
+  for (const g of groups) {
+    const name = g.displayName || '';
+    const desc = g.description || '';
+    const buckets = Array.isArray(g.buckets) ? g.buckets : [];
+    const five = buckets.find(
+      (b) => b.window === '5h' || /5h/i.test(b.bucketId || '')
+    );
+    const week = buckets.find(
+      (b) => b.window === 'weekly' || /weekly/i.test(b.bucketId || '')
+    );
+    // Antigravity displays the 5-hour quota bucket when present (e.g. Gemini Models / 3P),
+    // and falls back to weekly when 5-hour does not apply (e.g. Gemini 4 Argon).
+    const primary = five || week || buckets[0] || null;
+    const remainingFraction =
+      typeof primary?.remainingFraction === 'number'
+        ? primary.remainingFraction
+        : null;
+    const resetTimeSec = primary?.resetTime
+      ? Math.floor(Date.parse(primary.resetTime) / 1000)
+      : null;
+
+    const entry = {
+      name,
+      remainingFraction,
+      resetTimeSeconds: Number.isFinite(resetTimeSec) ? resetTimeSec : null,
+      fiveFraction:
+        typeof five?.remainingFraction === 'number'
+          ? five.remainingFraction
+          : null,
+      weeklyFraction:
+        typeof week?.remainingFraction === 'number'
+          ? week.remainingFraction
+          : null,
+    };
+    parsedGroups.push(entry);
+
+    const listMatch = desc.match(/Models within this group:\s*([^\n]+)/i);
+    if (listMatch) {
+      const names = listMatch[1]
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+      for (const modelName of names) {
+        byModelBase[modelName] = entry;
+      }
+    }
+  }
+
+  return {
+    ok: true,
+    fetchedAt: Date.now(),
+    byModelBase,
+    groups: parsedGroups,
+  };
+}
 
 async function writeStatus(state, detail) {
   const key = `${state}:${detail}:${sessions.size}`;
@@ -174,29 +447,71 @@ async function writeStatus(state, detail) {
   try {
     await writeFile(
       STATUS_FILE,
-      JSON.stringify({ state, detail, windows: sessions.size, updatedAt: new Date().toISOString() }, null, 2),
+      JSON.stringify(
+        {
+          state,
+          detail,
+          windows: sessions.size,
+          updatedAt: new Date().toISOString(),
+        },
+        null,
+        2
+      ),
       'utf8'
     );
   } catch {}
 }
 
-function handleCdpEvent(client, msg) {
+async function handleCdpEvent(client, msg) {
+  const p = msg.params || {};
   if (msg.method === 'Runtime.executionContextsCleared') {
     client.active = false;
+    return;
+  }
+  if (msg.method === 'Runtime.bindingCalled' && p.name === BINDING) {
+    let req;
+    try {
+      req = JSON.parse(p.payload);
+    } catch {
+      return;
+    }
+    if (!req || !req.id) return;
+    if (MY_LS_ADDR && !(await probeTcpPort(MY_LS_ADDR, 400))) {
+      void quietExit();
+      return;
+    }
+    let result = null;
+    try {
+      if (req.type === 'quota') {
+        result = await fetchLiveQuotaForPicker();
+      }
+    } catch (err) {
+      result = { ok: false, error: err?.message || 'quota-error' };
+    }
+    if (client.closed) return;
+    try {
+      await client.send('Runtime.evaluate', {
+        expression: `window.__agyModelPickerResolve?.(${Number(req.id)}, ${JSON.stringify(result)})`,
+        contextId: p.executionContextId,
+      });
+    } catch {}
   }
 }
 
 async function attachTarget(target) {
   const client = new CdpClient(
     target.webSocketDebuggerUrl,
-    (c, m) => handleCdpEvent(c, m),
+    (c, m) => void handleCdpEvent(c, m),
     (c) => sessions.delete(c.wsUrl)
   );
   await client.open();
   try {
     await client.send('Page.enable');
     await client.send('Runtime.enable');
-    const res = await client.send('Page.addScriptToEvaluateOnNewDocument', { source: widgetCode });
+    await client.send('Runtime.addBinding', { name: BINDING });
+    const res = await client.send('Page.addScriptToEvaluateOnNewDocument', {
+      source: widgetCode,
+    });
     client.scriptId = res?.identifier || null;
     await client.send('Runtime.evaluate', { expression: widgetCode });
     return client;
@@ -229,19 +544,13 @@ function checkLsAlive() {
 let ticking = false;
 let lsDeadCount = 0;
 async function tick() {
-  if (ticking) return;
+  if (ticking || exiting) return;
   ticking = true;
   try {
-    // Exit cleanly if the parent language_server is gone so orphaned Windows sidecars never accumulate.
-    if (!(await checkLsAlive())) {
-      lsDeadCount++;
-      if (lsDeadCount >= 3) {
-        console.log('[agy-model-picker] parent language_server exited, shutting down sidecar');
-        await cleanupAndExit();
-      }
+    if (await isSupersededOrDeadLs()) {
+      await quietExit();
       return;
     }
-    lsDeadCount = 0;
 
     const targets = await discoverTargets();
     const activeUrls = new Set(targets.map((t) => t.webSocketDebuggerUrl));
@@ -266,11 +575,13 @@ async function tick() {
       try {
         const evalRes = await client.send('Runtime.evaluate', {
           returnByValue: true,
-          expression: '({ installed: Boolean(window.__agyModelPickerInstalled), hasTrigger: Boolean(document.querySelector("[data-testid=\\"model-selector-trigger\\"]")) })',
+          expression:
+            '({ installed: Boolean(window.__agyModelPickerInstalled), hasTrigger: Boolean(document.querySelector("[data-testid=\\"model-selector-trigger\\"]")) })',
         });
         const v = evalRes?.result?.value;
         client.active = Boolean(v?.installed && v?.hasTrigger);
         if (v && !v.installed) {
+          await client.send('Runtime.addBinding', { name: BINDING });
           await client.send('Runtime.evaluate', { expression: widgetCode });
         }
       } catch {
@@ -282,7 +593,9 @@ async function tick() {
     const anyActive = [...sessions.values()].some((c) => c.active);
     await writeStatus(
       anyActive ? 'active' : sessions.size ? 'connected' : 'waiting-target',
-      anyActive ? 'Periodic model picker attached' : 'Waiting for composer model trigger'
+      anyActive
+        ? 'Periodic model picker attached'
+        : 'Waiting for composer model trigger'
     );
   } catch (err) {
     const missingPort = err?.code === 'ENOENT';
@@ -298,21 +611,31 @@ async function tick() {
 }
 
 async function cleanupAndExit() {
+  if (exiting) return;
+  exiting = true;
   for (const client of sessions.values()) {
     try {
       if (client.scriptId) {
-        await client.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: client.scriptId });
+        await client.send('Page.removeScriptToEvaluateOnNewDocument', {
+          identifier: client.scriptId,
+        });
       }
-      await client.send('Runtime.evaluate', { expression: 'window.__agyModelPickerDispose?.()' });
+      await client.send('Runtime.evaluate', {
+        expression: 'window.__agyModelPickerDispose?.()',
+      });
     } catch {}
     client.close();
   }
+  await removeSelfFromInstances();
   process.exit(0);
 }
 
 process.on('SIGINT', () => void cleanupAndExit());
 process.on('SIGTERM', () => void cleanupAndExit());
 
-void tick();
-setInterval(() => void tick(), 3000);
-console.log('[agy-model-picker] sidecar injector started');
+(async () => {
+  await reconcileInstancesOnBoot();
+  void tick();
+  setInterval(() => void tick(), 3000);
+  console.log('[agy-model-picker] sidecar injector started');
+})();

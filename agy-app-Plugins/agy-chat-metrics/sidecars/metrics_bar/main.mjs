@@ -10,36 +10,50 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const BINDING = '__agyChatMetricsCall';
 const LOOPBACK = new Set(['127.0.0.1', 'localhost', '[::1]']);
 const STATUS_FILE = join(__dirname, 'status.json');
+const INSTANCES_FILE = join(__dirname, 'instances.json');
+const MY_LS_ADDR = (process.env.ANTIGRAVITY_LS_ADDRESS || '').trim();
 
 function getProfileDir() {
   if (process.platform === 'win32') {
-    const appData = process.env.APPDATA || join(process.env.USERPROFILE || '', 'AppData', 'Roaming');
+    const appData =
+      process.env.APPDATA ||
+      join(process.env.USERPROFILE || '', 'AppData', 'Roaming');
     return join(appData, 'Antigravity');
   }
   if (process.platform === 'darwin') {
-    return join(process.env.HOME || '', 'Library', 'Application Support', 'Antigravity');
+    return join(
+      process.env.HOME || '',
+      'Library',
+      'Application Support',
+      'Antigravity'
+    );
   }
   return join(process.env.HOME || '', '.config', 'Antigravity');
 }
 
 function httpGetJson(port, path) {
   return new Promise((resolve, reject) => {
-    const req = http.request({ hostname: '127.0.0.1', port, path, method: 'GET' }, (res) => {
-      let body = '';
-      res.setEncoding('utf8');
-      res.on('data', (chunk) => {
-        body += chunk;
-        if (body.length > 1048576) req.destroy(new Error('Response too large'));
-      });
-      res.on('end', () => {
-        if (res.statusCode !== 200) return reject(new Error(`HTTP ${res.statusCode}`));
-        try {
-          resolve(JSON.parse(body));
-        } catch (err) {
-          reject(err);
-        }
-      });
-    });
+    const req = http.request(
+      { hostname: '127.0.0.1', port, path, method: 'GET' },
+      (res) => {
+        let body = '';
+        res.setEncoding('utf8');
+        res.on('data', (chunk) => {
+          body += chunk;
+          if (body.length > 1048576)
+            req.destroy(new Error('Response too large'));
+        });
+        res.on('end', () => {
+          if (res.statusCode !== 200)
+            return reject(new Error(`HTTP ${res.statusCode}`));
+          try {
+            resolve(JSON.parse(body));
+          } catch (err) {
+            reject(err);
+          }
+        });
+      }
+    );
     req.on('error', reject);
     req.setTimeout(2000, () => req.destroy(new Error('Timeout')));
     req.end();
@@ -92,14 +106,16 @@ class CdpClient {
     this.ws = new WebSocket(this.wsUrl);
     this.ws.addEventListener('message', (event) => {
       try {
-        if (typeof event.data !== 'string' || event.data.length > 2097152) return;
+        if (typeof event.data !== 'string' || event.data.length > 2097152)
+          return;
         const msg = JSON.parse(event.data);
         if (msg.id) {
           const item = this.pending.get(msg.id);
           if (!item) return;
           this.pending.delete(msg.id);
           clearTimeout(item.timer);
-          if (msg.error) item.reject(new Error(msg.error.message || String(msg.error.code)));
+          if (msg.error)
+            item.reject(new Error(msg.error.message || String(msg.error.code)));
           else item.resolve(msg.result || {});
         } else if (msg.method) {
           this.onEvent(this, msg);
@@ -169,6 +185,129 @@ class CdpClient {
 const sessions = new Map();
 const widgetCode = buildWidgetScript(BINDING);
 let lastStatus = '';
+let lsMissCount = 0;
+let exiting = false;
+
+function probeTcpPort(addr, timeoutMs = 700) {
+  if (!addr) return Promise.resolve(true);
+  const sep = addr.lastIndexOf(':');
+  if (sep <= 0) return Promise.resolve(false);
+  const host = addr.slice(0, sep).replace(/^\[|\]$/g, '');
+  const port = parseInt(addr.slice(sep + 1), 10);
+  if (!host || !Number.isInteger(port) || port <= 0)
+    return Promise.resolve(false);
+
+  return new Promise((resolve) => {
+    const socket = net.createConnection({ host, port });
+    let done = false;
+    const finish = (ok) => {
+      if (done) return;
+      done = true;
+      try {
+        socket.destroy();
+      } catch {}
+      resolve(ok);
+    };
+    socket.setTimeout(timeoutMs);
+    socket.once('connect', () => finish(true));
+    socket.once('timeout', () => finish(false));
+    socket.once('error', () => finish(false));
+  });
+}
+
+function isPidAlive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return err?.code === 'EPERM';
+  }
+}
+
+async function readInstances() {
+  try {
+    const raw = await readFile(INSTANCES_FILE, 'utf8');
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr : [];
+  } catch {
+    return [];
+  }
+}
+
+async function reconcileInstancesOnBoot() {
+  const existing = await readInstances();
+  const survivors = [];
+  for (const item of existing) {
+    const pid = Number(item?.pid);
+    if (!pid || pid === process.pid || !isPidAlive(pid)) continue;
+    const itemLs = String(item?.lsAddr || '').trim();
+    const isDuplicate = itemLs === MY_LS_ADDR;
+    const isDeadLs = itemLs ? !(await probeTcpPort(itemLs, 400)) : true;
+    if (isDuplicate || isDeadLs) {
+      try {
+        process.kill(pid, 'SIGTERM');
+      } catch {}
+      continue;
+    }
+    survivors.push(item);
+  }
+  survivors.push({
+    pid: process.pid,
+    lsAddr: MY_LS_ADDR,
+    startedAt: Date.now(),
+  });
+  try {
+    await writeFile(INSTANCES_FILE, JSON.stringify(survivors, null, 2), 'utf8');
+  } catch {}
+}
+
+async function isSupersededOrDeadLs() {
+  if (MY_LS_ADDR) {
+    const alive = await probeTcpPort(MY_LS_ADDR, 800);
+    if (!alive) {
+      lsMissCount += 1;
+      if (lsMissCount >= 2) return true;
+    } else {
+      lsMissCount = 0;
+    }
+  }
+  const list = await readInstances();
+  const sameLs = list.filter(
+    (x) =>
+      String(x?.lsAddr || '').trim() === MY_LS_ADDR &&
+      Number(x?.pid) !== process.pid
+  );
+  for (const other of sameLs) {
+    const opid = Number(other.pid);
+    if (isPidAlive(opid) && Number(other.startedAt || 0) > 0) {
+      const mine = list.find((x) => Number(x?.pid) === process.pid);
+      if (mine && Number(other.startedAt) > Number(mine.startedAt || 0)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+async function removeSelfFromInstances() {
+  const list = await readInstances();
+  const filtered = list.filter((x) => Number(x?.pid) !== process.pid);
+  try {
+    await writeFile(INSTANCES_FILE, JSON.stringify(filtered, null, 2), 'utf8');
+  } catch {}
+}
+
+async function quietExit() {
+  if (exiting) return;
+  exiting = true;
+  for (const client of sessions.values()) {
+    client.close();
+  }
+  sessions.clear();
+  await removeSelfFromInstances();
+  process.exit(0);
+}
 
 async function writeStatus(state, detail) {
   const key = `${state}:${detail}:${sessions.size}`;
@@ -177,7 +316,16 @@ async function writeStatus(state, detail) {
   try {
     await writeFile(
       STATUS_FILE,
-      JSON.stringify({ state, detail, windows: sessions.size, updatedAt: new Date().toISOString() }, null, 2),
+      JSON.stringify(
+        {
+          state,
+          detail,
+          windows: sessions.size,
+          updatedAt: new Date().toISOString(),
+        },
+        null,
+        2
+      ),
       'utf8'
     );
   } catch {}
@@ -208,6 +356,11 @@ async function handleCdpEvent(client, msg) {
       return;
     }
     if (!req || !req.id) return;
+    if (MY_LS_ADDR && !(await probeTcpPort(MY_LS_ADDR, 400))) {
+      // Never hijack responses if our parent Language Server is dead.
+      void quietExit();
+      return;
+    }
     let result = null;
     try {
       if (req.type === 'metrics') {
@@ -237,7 +390,9 @@ async function attachTarget(target) {
     await client.send('Page.enable');
     await client.send('Runtime.enable');
     await client.send('Runtime.addBinding', { name: BINDING });
-    const res = await client.send('Page.addScriptToEvaluateOnNewDocument', { source: widgetCode });
+    const res = await client.send('Page.addScriptToEvaluateOnNewDocument', {
+      source: widgetCode,
+    });
     client.scriptId = res?.identifier || null;
     await client.send('Runtime.evaluate', { expression: widgetCode });
     return client;
@@ -270,19 +425,13 @@ function checkLsAlive() {
 let ticking = false;
 let lsDeadCount = 0;
 async function tick() {
-  if (ticking) return;
+  if (ticking || exiting) return;
   ticking = true;
   try {
-    // Exit cleanly if the parent language_server is gone so orphaned Windows sidecars never hijack a restarted window.
-    if (!(await checkLsAlive())) {
-      lsDeadCount++;
-      if (lsDeadCount >= 3) {
-        console.log('[agy-chat-metrics] parent language_server exited, shutting down sidecar');
-        await cleanupAndExit();
-      }
+    if (await isSupersededOrDeadLs()) {
+      await quietExit();
       return;
     }
-    lsDeadCount = 0;
 
     const targets = await discoverTargets();
     const activeUrls = new Set(targets.map((t) => t.webSocketDebuggerUrl));
@@ -307,7 +456,8 @@ async function tick() {
       try {
         const evalRes = await client.send('Runtime.evaluate', {
           returnByValue: true,
-          expression: '({ installed: Boolean(window.__agyChatMetricsInstalled), mounted: Boolean(document.querySelector("[data-agy-chat-metrics-bar]")) })',
+          expression:
+            '({ installed: Boolean(window.__agyChatMetricsInstalled), mounted: Boolean(document.querySelector("[data-agy-chat-metrics-bar]")) })',
         });
         const v = evalRes?.result?.value;
         client.mounted = Boolean(v?.mounted);
@@ -340,21 +490,31 @@ async function tick() {
 }
 
 async function cleanupAndExit() {
+  if (exiting) return;
+  exiting = true;
   for (const client of sessions.values()) {
     try {
       if (client.scriptId) {
-        await client.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: client.scriptId });
+        await client.send('Page.removeScriptToEvaluateOnNewDocument', {
+          identifier: client.scriptId,
+        });
       }
-      await client.send('Runtime.evaluate', { expression: 'window.__agyChatMetricsDispose?.()' });
+      await client.send('Runtime.evaluate', {
+        expression: 'window.__agyChatMetricsDispose?.()',
+      });
     } catch {}
     client.close();
   }
+  await removeSelfFromInstances();
   process.exit(0);
 }
 
 process.on('SIGINT', () => void cleanupAndExit());
 process.on('SIGTERM', () => void cleanupAndExit());
 
-void tick();
-setInterval(() => void tick(), 3000);
-console.log('[agy-chat-metrics] sidecar injector started');
+(async () => {
+  await reconcileInstancesOnBoot();
+  void tick();
+  setInterval(() => void tick(), 3000);
+  console.log('[agy-chat-metrics] sidecar injector started');
+})();

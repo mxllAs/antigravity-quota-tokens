@@ -35,3 +35,5 @@ yarn-debug.log*
 yarn-error.log*
 *.log
 agy-app-Plugins/**/status.json
+agy-app-Plugins/**/instances.json
+agy-app-Plugins/**/cache.json

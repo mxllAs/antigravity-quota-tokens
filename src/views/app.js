@@ -11,9 +11,18 @@ const vscode =
         setState: function (s) {},
       };
 
+const UI_ICONS = {
+  user: '<svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>',
+  warn: '<svg class="ui-icon ui-icon-xs icon-warn" style="margin-right:3px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>',
+  chevronRight: '<svg class="ui-icon ui-icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"></polyline></svg>',
+  star: '<svg class="ui-icon ui-icon-xs icon-star" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>',
+  archive: '<svg class="ui-icon ui-icon-xs icon-archive" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="21 8 21 21 3 21 3 8"></polyline><rect x="1" y="3" width="22" height="5"></rect><line x1="10" y1="12" x2="14" y2="12"></line></svg>',
+  folder: '<svg class="ui-icon ui-icon-xs icon-folder" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>',
+};
+
 const I18N = {
   zh: {
-    topTitle: '⚡ 实时配额与用量',
+    topTitle: '实时配额与用量',
     refresh: '刷新',
     refreshTitle: '重新检测进程与账号配额 (换账号后点此)',
     copy: '复制',
@@ -36,8 +45,8 @@ const I18N = {
     claudeNoAccessHint: '活动领取的 Pro 账号官方未分配 Claude 额度',
     noAccessTag: '未开通',
     fiveHUsed: '5h消耗: ',
-    resetPrefix: '⏱ 重置: ',
-    weeklyHealth: '📅 周额度健康度',
+    resetPrefix: '重置: ',
+    weeklyHealth: '周额度健康度',
     remaining: '剩余 ',
     lblContextWindow: '上下文窗口',
     turns: '轮',
@@ -45,7 +54,7 @@ const I18N = {
     sessions: '个会话',
     accumulated: '累计',
     secToday: '今日 Token 消耗大盘',
-    cacheRate: '⚡ 缓存率',
+    cacheRate: '缓存率',
     freshInput: '新鲜输入 (Input)',
     promptCache: '提示词缓存 (Cache)',
     modelOutput: '生成输出 (Output)',
@@ -75,7 +84,7 @@ const I18N = {
     contextPrefix: '上下文: ',
     archivedTag: '(已归档)',
     cleanTip: '本地会话文件已清理，Token历史与热力图已永久归档',
-    secWeeklyModels: '📅 本周期各模型消耗',
+    secWeeklyModels: '本周期各模型消耗',
     weeklyModeTotal: '总 Token',
     weeklyModeEffective: '非缓存 I/O',
     weeklyModeTip: '切换统计口径：总 Token / 仅非缓存有效输入+输出',
@@ -94,7 +103,8 @@ const I18N = {
     cliStop512: '约 1.3x 额度',
     cliStop900: '约 1.8x 额度',
     cliNoteHtml:
-      '⚠️ 说明：目前仅对 <strong>agy-cli</strong> 生效（读写 <code>~/.gemini/antigravity-cli/settings.json</code>），Antigravity IDE 暂不受此项控制。作用是调节触发上下文自动压缩的阈值：官方默认 <strong>256K</strong>，调节到 <strong>512K</strong> 以及 <strong>900K</strong> 后会增加每轮额度消耗。',
+      UI_ICONS.warn +
+      '说明：目前仅对 <strong>agy-cli</strong> 生效（读写 <code>~/.gemini/antigravity-cli/settings.json</code>），Antigravity IDE 暂不受此项控制。作用是调节触发上下文自动压缩的阈值：官方默认 <strong>256K</strong>，调节到 <strong>512K</strong> 以及 <strong>900K</strong> 后会增加每轮额度消耗。',
     cliStatusDefault: '已使用官方默认 (256K，未写入覆写字段)',
     cliStatusWritten: '已写入配置: ',
     cliStatusMissing: '首次切换将创建: ',
@@ -102,7 +112,7 @@ const I18N = {
     cliSavedToast: '已将 agy-cli 上下文压缩阈值设为 ',
   },
   en: {
-    topTitle: '⚡ Real-time Quota & Usage',
+    topTitle: 'Real-time Quota & Usage',
     refresh: 'Refresh',
     refreshTitle:
       'Detect process & account quota (Click after switching accounts)',
@@ -127,8 +137,8 @@ const I18N = {
     claudeNoAccessHint: 'Promotional Pro account without Claude quota allocation',
     noAccessTag: 'No Access',
     fiveHUsed: '5h Used: ',
-    resetPrefix: '⏱ Resets: ',
-    weeklyHealth: '📅 Weekly Quota Health',
+    resetPrefix: 'Resets: ',
+    weeklyHealth: 'Weekly Quota Health',
     remaining: 'Left ',
     lblContextWindow: 'Context Window',
     turns: 'turns',
@@ -136,7 +146,7 @@ const I18N = {
     sessions: 'sessions',
     accumulated: 'Total',
     secToday: "Today's Token Analytics",
-    cacheRate: '⚡ Cache Hit',
+    cacheRate: 'Cache Hit',
     freshInput: 'Fresh Input',
     promptCache: 'Prompt Cache',
     modelOutput: 'Output',
@@ -166,7 +176,7 @@ const I18N = {
     contextPrefix: 'Context: ',
     archivedTag: '(Archived)',
     cleanTip: 'Local files freed, Token history permanently archived',
-    secWeeklyModels: '📅 Weekly Usage by Model',
+    secWeeklyModels: 'Weekly Usage by Model',
     weeklyModeTotal: 'Total',
     weeklyModeEffective: 'Non-Cache I/O',
     weeklyModeTip: 'Toggle metric: All Tokens vs Fresh Input + Output',
@@ -185,7 +195,8 @@ const I18N = {
     cliStop512: '~1.3x quota',
     cliStop900: '~1.8x quota',
     cliNoteHtml:
-      '⚠️ Note: Applies to <strong>agy-cli</strong> only (writes <code>~/.gemini/antigravity-cli/settings.json</code>; Antigravity IDE is not affected). Controls the context compaction trigger threshold: official default is <strong>256K</strong>; raising to <strong>512K</strong> or <strong>900K</strong> increases quota usage per turn.',
+      UI_ICONS.warn +
+      'Note: Applies to <strong>agy-cli</strong> only (writes <code>~/.gemini/antigravity-cli/settings.json</code>; Antigravity IDE is not affected). Controls the context compaction trigger threshold: official default is <strong>256K</strong>; raising to <strong>512K</strong> or <strong>900K</strong> increases quota usage per turn.',
     cliStatusDefault: 'Using official default (256K, key omitted)',
     cliStatusWritten: 'Saved in config: ',
     cliStatusMissing: 'Will create on change: ',
@@ -408,6 +419,18 @@ window.addEventListener('message', (event) => {
   }
 });
 
+function setResetLabel(textId, wrapId, prefix, cd) {
+  const textEl = document.getElementById(textId);
+  const wrapEl = document.getElementById(wrapId);
+  if (cd) {
+    if (textEl) textEl.innerText = prefix + cd;
+    if (wrapEl) wrapEl.style.display = 'inline-flex';
+  } else {
+    if (textEl) textEl.innerText = '';
+    if (wrapEl) wrapEl.style.display = 'none';
+  }
+}
+
 function renderData(quota, tokens) {
   const t = I18N[currentLang] || I18N.zh;
 
@@ -428,6 +451,14 @@ function renderData(quota, tokens) {
       );
 
       const avatarEl = document.getElementById('accountAvatar');
+      const setFallbackAvatar = () => {
+        const ch = name.charAt(0);
+        if (ch) {
+          avatarEl.innerText = ch;
+        } else {
+          avatarEl.innerHTML = UI_ICONS.user;
+        }
+      };
       if (quota.user_avatar) {
         avatarEl.innerHTML = '';
         const img = document.createElement('img');
@@ -435,12 +466,10 @@ function renderData(quota, tokens) {
         img.className = 'account-avatar-img';
         img.alt = name;
         img.referrerPolicy = 'no-referrer';
-        img.onerror = () => {
-          avatarEl.innerText = name.charAt(0) || '👤';
-        };
+        img.onerror = setFallbackAvatar;
         avatarEl.appendChild(img);
       } else {
-        avatarEl.innerText = name.charAt(0) || '👤';
+        setFallbackAvatar();
       }
     }
 
@@ -464,9 +493,7 @@ function renderData(quota, tokens) {
       document.getElementById('geminiUsed').innerText =
         t.fiveHUsed + fiveH.used_pct + '%';
       const cd = formatCountdown(fiveH.reset_time);
-      document.getElementById('geminiReset').innerText = cd
-        ? t.resetPrefix + cd
-        : '';
+      setResetLabel('geminiReset', 'geminiResetWrap', t.resetPrefix, cd);
 
       const dot = document.getElementById('geminiDot');
       dot.className =
@@ -483,9 +510,7 @@ function renderData(quota, tokens) {
         document.getElementById('geminiWeeklyVal').innerText =
           t.remaining + g.weekly.remaining_pct + '%';
         const wCd = formatCountdown(g.weekly.reset_time);
-        document.getElementById('geminiWeeklyReset').innerText = wCd
-          ? '⏱ ' + wCd
-          : '';
+        setResetLabel('geminiWeeklyReset', 'geminiWeeklyResetWrap', '', wCd);
       } else {
         wRow.style.display = 'none';
       }
@@ -517,7 +542,7 @@ function renderData(quota, tokens) {
         document.getElementById('gemini4Bar').style.width = weekly.remaining_pct + '%';
         document.getElementById('gemini4Used').innerText = (currentLang === 'en' ? 'Weekly Used: ' : '周额度消耗: ') + weekly.used_pct + '%';
         const cd = formatCountdown(weekly.reset_time);
-        document.getElementById('gemini4Reset').innerText = cd ? t.resetPrefix + cd : '';
+        setResetLabel('gemini4Reset', 'gemini4ResetWrap', t.resetPrefix, cd);
         const dot = document.getElementById('gemini4Dot');
         if (dot) {
           dot.className =
@@ -541,7 +566,7 @@ function renderData(quota, tokens) {
       document.getElementById('claudePct').style.color = '#9ca3af';
       document.getElementById('claudeBar').style.width = '0%';
       document.getElementById('claudeUsed').innerText = t.claudeNoAccess;
-      document.getElementById('claudeReset').innerText = '';
+      setResetLabel('claudeReset', 'claudeResetWrap', '', '');
       const dot = document.getElementById('claudeDot');
       if (dot) dot.className = 'dot dot-gray';
       const hint = document.getElementById('claudeModelsHint');
@@ -562,9 +587,7 @@ function renderData(quota, tokens) {
       document.getElementById('claudeUsed').innerText =
         t.fiveHUsed + fiveH.used_pct + '%';
       const cd = formatCountdown(fiveH.reset_time);
-      document.getElementById('claudeReset').innerText = cd
-        ? t.resetPrefix + cd
-        : '';
+      setResetLabel('claudeReset', 'claudeResetWrap', t.resetPrefix, cd);
 
       const dot = document.getElementById('claudeDot');
       if (dot) {
@@ -583,9 +606,7 @@ function renderData(quota, tokens) {
         document.getElementById('claudeWeeklyVal').innerText =
           t.remaining + c.weekly.remaining_pct + '%';
         const wCd = formatCountdown(c.weekly.reset_time);
-        document.getElementById('claudeWeeklyReset').innerText = wCd
-          ? '⏱ ' + wCd
-          : '';
+        setResetLabel('claudeWeeklyReset', 'claudeWeeklyResetWrap', '', wCd);
       } else {
         wRow.style.display = 'none';
       }
@@ -646,8 +667,9 @@ function renderData(quota, tokens) {
     }
 
     // 3. Model & Stats
-    document.getElementById('activeSessionModel').innerText = '🤖 ' + modelName;
-    document.getElementById('activeSessionModel').title =
+    document.getElementById('activeSessionModel').innerText = modelName;
+    const modelWrap = document.getElementById('activeSessionModelWrap') || document.getElementById('activeSessionModel');
+    modelWrap.title =
       modelName +
       ' (' +
       (currentLang === 'en' ? 'Context Limit: ' : '上下文上限: ') +
@@ -1124,14 +1146,19 @@ function renderProjectsWithSessions(projects, currentProj) {
 
     const arrow = document.createElement('span');
     arrow.className = 'project-arrow';
-    arrow.innerText = '▶';
+    arrow.innerHTML = UI_ICONS.chevronRight;
 
     const title = document.createElement('span');
     title.className = 'project-title';
-    title.innerText =
-      (isCurrent ? '⭐ ' : isArchived ? '📦 ' : '📁 ') +
-      p.name +
-      (isCurrent ? t.currentTag : '');
+    title.innerHTML = isCurrent
+      ? UI_ICONS.star
+      : isArchived
+        ? UI_ICONS.archive
+        : UI_ICONS.folder;
+    const titleText = document.createElement('span');
+    titleText.className = 'project-title-text';
+    titleText.innerText = p.name + (isCurrent ? t.currentTag : '');
+    title.appendChild(titleText);
     if (isArchived) {
       const archSpan = document.createElement('span');
       archSpan.className = 'project-archived-tag';

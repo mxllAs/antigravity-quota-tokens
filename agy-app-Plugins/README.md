@@ -13,6 +13,7 @@
 | :--- | :--- | :--- | :--- |
 | [`agy-chat-metrics/`](agy-chat-metrics/) | **Chat Metrics (Context & Speed)** | 聊天框底栏内嵌显示当前会话**上下文占比 (%)** 与 **Token 生成速度 (`tok/s`)**，跟随桌面端主题自动变色（无右侧面板） | [README.md](agy-chat-metrics/README.md) |
 | [`agy-model-picker/`](agy-model-picker/) | **Periodic Model & Effort Picker** | 左键呼出 **Gemini 4 元素周期表 + 自适应推理强度滑块**（右键/`Shift+点击`保留原生菜单） | [README.md](agy-model-picker/README.md) |
+| [`agy-zh-cn/`](agy-zh-cn/) | **Antigravity Desktop 中文汉化** | 非入侵式汉化桌面端 **Settings 设置面板、侧边栏导航与顶部菜单**，不改 `app.asar`，支持设置页一键中/英切换 | [README.md](agy-zh-cn/README.md) |
 
 ---
 
