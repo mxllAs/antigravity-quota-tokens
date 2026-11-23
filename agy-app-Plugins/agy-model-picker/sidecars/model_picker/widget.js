@@ -61,6 +61,7 @@ export function buildPickerWidgetScript(bindingName = '__agyModelPickerCall') {
     'Gemini 4 Carbon': '当前仅面向 Ultra 订阅用户开放',
     'Gemini 4 Neon': '主打深度推理与复杂工程问题',
     'Gemini 4 Argon': '原版 Gemini 4，适合高阶复杂工作流',
+    'Orchestrator': '智能编排：自选主规划模型及推理强度，常规步骤自动分流提速',
     'Orchestrator (Neon)': 'Neon 编排：常规步自动交由 Hydrogen，省额度不降质',
     'Orchestrator (Argon)': 'Argon 编排：常规步自动交由 Hydrogen，省额度不降质',
     'Gemini 3.8 Flash': '轻量高速模型，适合快速低开销任务',
@@ -71,6 +72,9 @@ export function buildPickerWidgetScript(bindingName = '__agyModelPickerCall') {
 
   function localizeDescription(entry) {
     if (!entry) return '';
+    if (entry.isUnifiedOrchestrator) {
+      return DESC_ZH_BY_BASE['Orchestrator'];
+    }
     const raw = String(entry.tagDescription || '').trim();
     if (raw && DESC_ZH_BY_EN[raw]) return DESC_ZH_BY_EN[raw];
     if (raw) {
@@ -84,10 +88,26 @@ export function buildPickerWidgetScript(bindingName = '__agyModelPickerCall') {
 
   function formatBannerTitle(entry) {
     if (!entry) return 'Gemini 4 元素周期表';
+    if (entry.isUnifiedOrchestrator) {
+      const pName = entry.activePlannerEntry?.baseName;
+      return pName ? ('Orchestrator · ' + pName) : 'Orchestrator';
+    }
     if (entry.element) {
       return '#' + entry.element.z + ' ' + entry.baseName + (entry.element.zh ? (' · ' + entry.element.zh) : '');
     }
     return entry.baseName;
+  }
+
+  function isOrchestratorOpt(opt) {
+    if (!opt) return false;
+    return /^orchestrator/i.test(opt.label || '') || /orchestrator/i.test(opt.modelId || '');
+  }
+
+  function formatPlannerShortName(baseName) {
+    return String(baseName || '')
+      .replace(/^Gemini\\s+4\\s+/i, '')
+      .replace(/^Claude\\s+/i, '')
+      .trim() || baseName;
   }
 
   const ELEMENT_BY_NAME = new Map();
@@ -384,15 +404,121 @@ export function buildPickerWidgetScript(bindingName = '__agyModelPickerCall') {
         entry.options[0]?.opt;
     }
 
+    const hasUnifiedOrch =
+      Array.isArray(ctx.orchestratorPlanners) &&
+      ctx.orchestratorPlanners.length > 0 &&
+      typeof ctx.orchestratorPick?.select === 'function';
+
+    if (hasUnifiedOrch) {
+      // Find the primary Orchestrator model option from ctx.groups (or modelOptions).
+      let primaryOrchOpt = null;
+      if (Array.isArray(ctx.groups)) {
+        for (const g of ctx.groups) {
+          const hit = (g?.options || []).find((o) => isOrchestratorOpt(o) && !o.disabled);
+          if (hit) { primaryOrchOpt = hit; break; }
+        }
+      }
+      if (!primaryOrchOpt) {
+        primaryOrchOpt = rawOptions.find((o) => isOrchestratorOpt(o) && !o.disabled) ||
+          rawOptions.find((o) => isOrchestratorOpt(o)) || null;
+      }
+
+      if (primaryOrchOpt) {
+        // Group ctx.orchestratorPlanners by base model name (e.g. Gemini 4 Neon, Gemini 4 Argon, Claude Opus 5.5).
+        const plannerByBase = new Map();
+        for (const pOpt of ctx.orchestratorPlanners) {
+          if (!pOpt || !pOpt.label) continue;
+          const { baseName: pBase, tier: pTier } = splitLabelTier(pOpt.label);
+          let pEntry = plannerByBase.get(pBase);
+          if (!pEntry) {
+            const refEntry = byBase.get(pBase);
+            const live = !pOpt.disabled && liveQuotaSnapshot?.ok ? lookupLiveSummaryQuota(pBase) : null;
+            const qFrac = (live && typeof live.remainingFraction === 'number')
+              ? live.remainingFraction
+              : (refEntry?.quotaFraction ?? (typeof pOpt.quotaInfo?.remainingFraction === 'number' ? pOpt.quotaInfo.remainingFraction : null));
+            const rSec = (live && live.resetTimeSeconds != null)
+              ? live.resetTimeSeconds
+              : (refEntry?.resetTimeSeconds ?? parseResetSec(pOpt.quotaInfo?.resetTime));
+            pEntry = {
+              baseName: pBase,
+              shortName: formatPlannerShortName(pBase),
+              element: matchPeriodicElement(pBase),
+              options: [],
+              tiersByName: new Map(),
+              allDisabled: true,
+              quotaFraction: qFrac,
+              resetTimeSeconds: rSec,
+            };
+            plannerByBase.set(pBase, pEntry);
+          }
+          pEntry.options.push({ opt: pOpt, tier: pTier });
+          if (pTier && !pEntry.tiersByName.has(pTier)) {
+            pEntry.tiersByName.set(pTier, pOpt);
+          }
+          if (!pOpt.disabled) pEntry.allDisabled = false;
+        }
+        const planners = [];
+        for (const pEntry of plannerByBase.values()) {
+          pEntry.tiers = TIER_ORDER
+            .filter((t) => pEntry.tiersByName.has(t))
+            .map((t) => ({ tier: t, opt: pEntry.tiersByName.get(t) }));
+          pEntry.defaultOpt =
+            pEntry.tiersByName.get('Medium') ||
+            pEntry.tiersByName.get('High') ||
+            pEntry.tiers[0]?.opt ||
+            pEntry.options[0]?.opt;
+          planners.push(pEntry);
+        }
+
+        const pickedVal = Number(ctx.orchestratorPick?.model || 0);
+        const livePlannerOpt =
+          (pickedVal > 0 ? ctx.orchestratorPlanners.find((p) => p.value === pickedVal) : null) ||
+          ctx.orchestratorDefaultPlanner ||
+          ctx.orchestratorPlanners[0] ||
+          null;
+        const activePlannerOpt = optimisticState?.plannerOpt || livePlannerOpt;
+        const { baseName: activePlannerBase, tier: activePlannerTier } = splitLabelTier(activePlannerOpt?.label || '');
+        const activePlannerEntry = plannerByBase.get(activePlannerBase) || planners[0] || null;
+
+        // Remove individual flat Orchestrator (...) entries and replace with unified 'Orchestrator'.
+        for (const k of Array.from(byBase.keys())) {
+          if (/^orchestrator/i.test(k)) byBase.delete(k);
+        }
+
+        const orchEntry = {
+          baseName: 'Orchestrator',
+          element: null,
+          isUnifiedOrchestrator: true,
+          primaryOrchOpt,
+          planners,
+          plannerByBase,
+          activePlannerOpt,
+          activePlannerEntry,
+          activePlannerTier: activePlannerTier || null,
+          options: [{ opt: primaryOrchOpt, tier: null }],
+          tiersByName: activePlannerEntry?.tiersByName || new Map(),
+          tiers: activePlannerEntry?.tiers || [],
+          defaultOpt: primaryOrchOpt,
+          allDisabled: Boolean(primaryOrchOpt.disabled),
+          tagTitle: primaryOrchOpt.tagTitle || 'New',
+          tagDescription: DESC_ZH_BY_BASE['Orchestrator'],
+          quotaFraction: activePlannerEntry?.quotaFraction ?? (typeof primaryOrchOpt.quotaInfo?.remainingFraction === 'number' ? primaryOrchOpt.quotaInfo.remainingFraction : null),
+          resetTimeSeconds: activePlannerEntry?.resetTimeSeconds ?? parseResetSec(primaryOrchOpt.quotaInfo?.resetTime),
+        };
+        byBase.set('Orchestrator', orchEntry);
+      }
+    }
+
     const elements = [];
     const companions = [];
     for (const entry of byBase.values()) {
       if (entry.element) elements.push(entry);
+      else if (entry.isUnifiedOrchestrator) companions.unshift(entry);
       else companions.push(entry);
     }
     elements.sort((a, b) => a.element.z - b.element.z);
 
-    return { elements, companions, byBase };
+    return { elements, companions, byBase, hasUnifiedOrch };
   }
 
   function formatResetTime(sec) {
@@ -804,6 +930,106 @@ export function buildPickerWidgetScript(bindingName = '__agyModelPickerCall') {
         color: var(--ag-accent-text);
         font-weight: 600;
       }
+      .comp-btn.comp-btn-full {
+        grid-column: 1 / -1;
+      }
+      .comp-left {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        min-width: 0;
+      }
+      .comp-subpill {
+        font-size: 9.5px;
+        font-weight: 500;
+        padding: 1px 6px;
+        border-radius: 999px;
+        background: var(--ag-surface-hover);
+        color: var(--ag-muted);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 175px;
+      }
+      .comp-btn.active .comp-subpill {
+        background: rgba(240, 122, 56, 0.14);
+        color: var(--ag-accent-text);
+      }
+
+      /* Unified Orchestrator planner selector */
+      .orch-box {
+        border-top: 1px solid var(--ag-border);
+        padding-top: 8px;
+        margin-bottom: 8px;
+      }
+      .orch-hdr {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        font-size: 10.5px;
+        margin-bottom: 6px;
+      }
+      .orch-hdr-title {
+        font-weight: 700;
+        color: var(--ag-fg);
+      }
+      .orch-hdr-hint {
+        font-size: 10px;
+        color: var(--ag-muted);
+      }
+      .orch-planners {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 4px;
+      }
+      .orch-chip {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 1px;
+        padding: 6px 8px;
+        border-radius: 9px;
+        border: 1px solid var(--ag-border);
+        background: var(--ag-surface);
+        color: var(--ag-fg);
+        font-family: inherit;
+        cursor: pointer;
+        text-align: left;
+        transition: background 0.12s ease, border-color 0.12s ease, transform 0.1s ease;
+        min-width: 0;
+      }
+      .orch-chip:hover:not(.disabled) {
+        background: var(--ag-surface-hover);
+        border-color: var(--ag-muted);
+        transform: translateY(-1px);
+      }
+      .orch-chip.active {
+        background: var(--ag-accent-soft);
+        border-color: var(--ag-accent-border);
+        box-shadow: 0 0 0 1px var(--ag-accent-border);
+        color: var(--ag-accent-text);
+      }
+      .orch-chip.disabled {
+        opacity: 0.42;
+        cursor: not-allowed;
+      }
+      .orch-chip-name {
+        font-size: 11px;
+        font-weight: 700;
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .orch-chip-meta {
+        font-size: 9.5px;
+        color: var(--ag-muted);
+        font-variant-numeric: tabular-nums;
+      }
+      .orch-chip.active .orch-chip-meta {
+        color: var(--ag-accent-text);
+        font-weight: 600;
+      }
 
       /* Info banner & Effort Slider */
       .info-strip {
@@ -1079,7 +1305,7 @@ export function buildPickerWidgetScript(bindingName = '__agyModelPickerCall') {
     if (!targetOpt || targetOpt.disabled) return;
     const liveCtx = findModelContext(activeBtn) || ctx;
     if (!liveCtx || typeof liveCtx.setSelectedModel !== 'function') return;
-    optimisticState = { opt: targetOpt, until: Date.now() + 450 };
+    optimisticState = { opt: targetOpt, plannerOpt: null, until: Date.now() + 450 };
     panel._settleUntil = 0;
     liveCtx.setSelectedModel(targetOpt);
     render();
@@ -1087,10 +1313,56 @@ export function buildPickerWidgetScript(bindingName = '__agyModelPickerCall') {
     setTimeout(() => render(), 180);
   }
 
+  function applyOrchestratorPick(ctx, orchEntry, targetPlannerOpt, keepSettle) {
+    const liveCtx = findModelContext(activeBtn) || ctx;
+    if (!liveCtx || typeof liveCtx.setSelectedModel !== 'function') return;
+    const orchOpt = (isOrchestratorOpt(liveCtx.selectedModel) && !liveCtx.selectedModel.disabled)
+      ? liveCtx.selectedModel
+      : orchEntry?.primaryOrchOpt;
+    if (!orchOpt || orchOpt.disabled) return;
+
+    const plannerOpt = targetPlannerOpt || orchEntry?.activePlannerOpt || null;
+    if (plannerOpt && typeof liveCtx.orchestratorPick?.select === 'function') {
+      const defVal = liveCtx.orchestratorDefaultPlanner?.value;
+      liveCtx.orchestratorPick.select(plannerOpt.value === defVal ? 0 : plannerOpt.value);
+    }
+    optimisticState = { opt: orchOpt, plannerOpt, until: Date.now() + 500 };
+    if (!keepSettle) panel._settleUntil = 0;
+    liveCtx.setSelectedModel(orchOpt);
+    if (!keepSettle) {
+      render();
+      setTimeout(() => render(), 60);
+      setTimeout(() => render(), 180);
+    }
+  }
+
+  function selectOrchestratorPlanner(ctx, orchEntry, plannerEntry) {
+    if (!orchEntry || !plannerEntry || plannerEntry.allDisabled) return;
+    const curTier = orchEntry.activePlannerTier;
+    let targetOpt = null;
+    if (curTier && plannerEntry.tiersByName.has(curTier) && !plannerEntry.tiersByName.get(curTier).disabled) {
+      targetOpt = plannerEntry.tiersByName.get(curTier);
+    } else if (curTier && plannerEntry.tiers.length) {
+      const wantIdx = TIER_ORDER.indexOf(curTier);
+      const enabledTiers = plannerEntry.tiers.filter((x) => !x.opt.disabled);
+      enabledTiers.sort((a, b) => Math.abs(TIER_ORDER.indexOf(a.tier) - wantIdx) - Math.abs(TIER_ORDER.indexOf(b.tier) - wantIdx));
+      targetOpt = enabledTiers[0]?.opt || plannerEntry.defaultOpt;
+    } else {
+      targetOpt = plannerEntry.defaultOpt;
+    }
+    applyOrchestratorPick(ctx, orchEntry, targetOpt, false);
+    triggerQuotaRefresh(ctx);
+  }
+
   function selectBaseEntry(ctx, entry, currentTier) {
     if (!entry || entry.allDisabled) {
       hoveredNote = localizeDescription(entry) || (entry?.baseName + ' 当前不可用');
       render();
+      triggerQuotaRefresh(ctx);
+      return;
+    }
+    if (entry.isUnifiedOrchestrator) {
+      applyOrchestratorPick(ctx, entry, entry.activePlannerOpt, false);
       triggerQuotaRefresh(ctx);
       return;
     }
@@ -1126,15 +1398,27 @@ export function buildPickerWidgetScript(bindingName = '__agyModelPickerCall') {
       return;
     }
 
-    if (optimisticState && (ctx.selectedModel?.value === optimisticState.opt.value || Date.now() > optimisticState.until)) {
-      optimisticState = null;
+    if (optimisticState) {
+      const modelMatched = ctx.selectedModel?.value === optimisticState.opt.value;
+      const plannerMatched = !optimisticState.plannerOpt || (() => {
+        const picked = Number(ctx.orchestratorPick?.model || 0);
+        const effVal = picked > 0 ? picked : ctx.orchestratorDefaultPlanner?.value;
+        return effVal === optimisticState.plannerOpt.value;
+      })();
+      if ((modelMatched && plannerMatched) || Date.now() > optimisticState.until) {
+        optimisticState = null;
+      }
     }
     const effectiveSelected = optimisticState ? optimisticState.opt : ctx.selectedModel;
 
-    const { elements, companions, byBase } = collectGroupedModels(ctx);
+    const { elements, companions, byBase, hasUnifiedOrch } = collectGroupedModels(ctx);
     const selLabel = effectiveSelected?.label || '';
-    const { baseName: activeBaseName, tier: activeTier } = splitLabelTier(selLabel);
+    const splitSel = splitLabelTier(selLabel);
+    const isOrchSelected = hasUnifiedOrch && isOrchestratorOpt(effectiveSelected) && byBase.has('Orchestrator');
+    const activeBaseName = isOrchSelected ? 'Orchestrator' : splitSel.baseName;
     const activeEntry = byBase.get(activeBaseName) || elements[0] || companions[0] || null;
+    const activeTier = activeEntry?.isUnifiedOrchestrator ? activeEntry.activePlannerTier : splitSel.tier;
+    const sliderSelectedVal = activeEntry?.isUnifiedOrchestrator ? activeEntry.activePlannerOpt?.value : effectiveSelected?.value;
     const activeElMeta = activeEntry?.element;
 
     const quotaPct = activeEntry?.quotaFraction != null ? Math.round(activeEntry.quotaFraction * 100) + '%' : '—';
@@ -1144,6 +1428,10 @@ export function buildPickerWidgetScript(bindingName = '__agyModelPickerCall') {
       resetText,
     ].filter(Boolean).join(' · ') || (activeTier ? ('强度 ' + activeTier) : '标准模式');
 
+    const hdrTitle = activeEntry?.isUnifiedOrchestrator && activeEntry.activePlannerEntry
+      ? ('Orchestrator · ' + activeEntry.activePlannerEntry.shortName)
+      : (activeEntry?.baseName || selLabel || '选择模型');
+
     const elementGridHtml = viewMode === 'pt'
       ? renderPeriodicGrid(elements, activeBaseName, activeEntry)
       : renderElementCards(elements, activeBaseName);
@@ -1151,6 +1439,20 @@ export function buildPickerWidgetScript(bindingName = '__agyModelPickerCall') {
     const compHtml = companions.map((entry) => {
       const isActive = entry.baseName === activeBaseName;
       const pct = entry.quotaFraction != null ? Math.round(entry.quotaFraction * 100) + '%' : '';
+      if (entry.isUnifiedOrchestrator) {
+        const pShort = entry.activePlannerEntry?.shortName || '';
+        const pTier = entry.activePlannerTier || '';
+        const pillText = [pShort, pTier].filter(Boolean).join(' · ');
+        return \`
+          <button type="button" class="comp-btn comp-btn-full \${isActive ? 'active' : ''} \${entry.allDisabled ? 'disabled' : ''}" data-base="Orchestrator">
+            <span class="comp-left">
+              <span class="comp-name">Orchestrator</span>
+              \${pillText ? \`<span class="comp-subpill">\${esc(pillText)}</span>\` : ''}
+            </span>
+            <span class="comp-meta">\${esc(pct || 'Agent')}</span>
+          </button>
+        \`;
+      }
       const shortName = entry.baseName.replace(/^GPT-OSS 120B$/i, 'GPT-OSS 120B');
       const fallbackBadge = entry.baseName.startsWith('Orchestrator') ? 'Agent' : (entry.tiers.length > 1 ? entry.tiers.length + '档' : '固定');
       return \`
@@ -1162,7 +1464,8 @@ export function buildPickerWidgetScript(bindingName = '__agyModelPickerCall') {
     }).join('');
 
     const activeDesc = hoveredNote || localizeDescription(activeEntry);
-    const sliderHtml = renderSliderSection(activeEntry, activeTier, effectiveSelected?.value);
+    const orchPlannersHtml = activeEntry?.isUnifiedOrchestrator ? renderOrchestratorPlanners(activeEntry) : '';
+    const sliderHtml = renderSliderSection(activeEntry, activeTier, sliderSelectedVal);
 
     panel.innerHTML = \`
       <div class="hdr">
@@ -1171,7 +1474,7 @@ export function buildPickerWidgetScript(bindingName = '__agyModelPickerCall') {
             \${esc(activeElMeta ? activeElMeta.symbol : (activeBaseName.startsWith('Orchestrator') ? 'OR' : 'AI'))}
           </div>
           <div class="hdr-title-wrap">
-            <div class="hdr-title">\${esc(activeEntry?.baseName || selLabel || '选择模型')}</div>
+            <div class="hdr-title">\${esc(hdrTitle)}</div>
             <div class="hdr-sub">\${esc(subLine)}</div>
           </div>
         </div>
@@ -1199,13 +1502,40 @@ export function buildPickerWidgetScript(bindingName = '__agyModelPickerCall') {
       \` : ''}
 
       \${activeDesc && viewMode !== 'pt' ? \`<div class="info-strip">\${esc(activeDesc)}</div>\` : ''}
+      \${orchPlannersHtml}
       \${sliderHtml}
       <div class="ftr-tip">双击模型直接关闭 · 右键或 Shift+点击按钮打开原生菜单</div>
     \`;
 
-    wirePanelEvents(ctx, byBase, activeEntry, activeTier, effectiveSelected);
+    wirePanelEvents(ctx, byBase, activeEntry, activeTier, effectiveSelected, sliderSelectedVal);
     positionPanel();
     requestAnimationFrame(() => positionPanel());
+  }
+
+  function renderOrchestratorPlanners(orchEntry) {
+    const planners = Array.isArray(orchEntry?.planners) ? orchEntry.planners : [];
+    if (!planners.length) return '';
+    const activeBase = orchEntry.activePlannerEntry?.baseName || '';
+    const chips = planners.map((p) => {
+      const isAct = p.baseName === activeBase;
+      const pct = p.quotaFraction != null ? Math.round(p.quotaFraction * 100) + '%' : '';
+      const prefix = p.element ? (p.element.symbol + ' · ') : '';
+      return \`
+        <button type="button" class="orch-chip \${isAct ? 'active' : ''} \${p.allDisabled ? 'disabled' : ''}" data-orch-planner="\${esc(p.baseName)}">
+          <span class="orch-chip-name">\${esc(prefix + p.shortName)}</span>
+          <span class="orch-chip-meta">\${esc(pct || (p.tiers.length + '档'))}</span>
+        </button>
+      \`;
+    }).join('');
+    return \`
+      <div class="orch-box">
+        <div class="orch-hdr">
+          <span class="orch-hdr-title">规划模型 (Planner)</span>
+          <span class="orch-hdr-hint">点击切换编排主力</span>
+        </div>
+        <div class="orch-planners">\${chips}</div>
+      </div>
+    \`;
   }
 
   function renderElementCards(elements, activeBaseName) {
@@ -1345,7 +1675,7 @@ export function buildPickerWidgetScript(bindingName = '__agyModelPickerCall') {
     \`;
   }
 
-  function wirePanelEvents(ctx, byBase, activeEntry, activeTier, effectiveSelected) {
+  function wirePanelEvents(ctx, byBase, activeEntry, activeTier, effectiveSelected, sliderSelectedVal) {
     panel.querySelector('[data-act="toggle-view"]')?.addEventListener('click', () => {
       viewMode = viewMode === 'pt' ? 'cards' : 'pt';
       try { localStorage.setItem(VIEW_STORAGE_KEY, viewMode); } catch {}
@@ -1399,9 +1729,21 @@ export function buildPickerWidgetScript(bindingName = '__agyModelPickerCall') {
       });
     }
 
+    if (activeEntry?.isUnifiedOrchestrator && activeEntry.plannerByBase) {
+      for (const chip of panel.querySelectorAll('[data-orch-planner]')) {
+        const pBase = chip.getAttribute('data-orch-planner');
+        const pEntry = activeEntry.plannerByBase.get(pBase);
+        if (!pEntry) continue;
+        chip.addEventListener('click', () => selectOrchestratorPlanner(ctx, activeEntry, pEntry));
+        chip.addEventListener('dblclick', () => {
+          if (!pEntry.allDisabled) closePicker();
+        });
+      }
+    }
+
     if (activeEntry && activeEntry.tiers.length > 1) {
       const tiers = activeEntry.tiers;
-      let currentVal = effectiveSelected?.value;
+      let currentVal = sliderSelectedVal ?? effectiveSelected?.value;
       let isDraggingSlider = false;
 
       const syncSliderVisuals = (idx, moveThumb) => {
@@ -1424,8 +1766,12 @@ export function buildPickerWidgetScript(bindingName = '__agyModelPickerCall') {
         if (currentVal !== item.opt.value) {
           currentVal = item.opt.value;
           const liveCtx = findModelContext(activeBtn) || ctx;
-          optimisticState = { opt: item.opt, until: Date.now() + 450 };
-          liveCtx.setSelectedModel?.(item.opt);
+          if (activeEntry.isUnifiedOrchestrator) {
+            applyOrchestratorPick(liveCtx, activeEntry, item.opt, true);
+          } else {
+            optimisticState = { opt: item.opt, plannerOpt: null, until: Date.now() + 450 };
+            liveCtx.setSelectedModel?.(item.opt);
+          }
         }
         syncSliderVisuals(clamped, moveThumb);
         return true;
