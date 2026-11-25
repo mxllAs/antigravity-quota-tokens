@@ -3,6 +3,15 @@
 本文档记录 **Antigravity Quota & Token Monitor** 扩展的所有重要版本更新。  
 本格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，并遵循 [语义化版本规范 (SemVer)](https://semver.org/lang/zh-CN/)。
 
+## [1.5.1] - 2026-11-25
+
+### 🐛 问题修复：适配 Antigravity `2.35.x+` 语言服务发现机制
+* **修复更新至 Antigravity `2.35.x` 后配额面板一直卡在「检测中... 正在连接语言服务」的问题**（[quota_detector.js](src/quota_detector.js)）：
+  * 新版 `agy.exe --hub` 与 `language_server.exe` 不再通过进程命令行明文传入 `--csrf_token`，而是将运行中实例的 `pid`、`httpsPort`、`httpPort` 与 `csrfToken` 写入 `~/.gemini/antigravity/daemon/*.json`；
+  * 新增 `isPidAlive`、`listRunningServerProcesses` 与 `readDaemonCandidates`，按存活 PID 读取 daemon 元数据并与当前工作区/宿主进程路径联合打分，直连 `httpsPort` / `httpPort` 获取实时配额，同时完整保留 `<= 2.34` 的命令行 `--csrf_token` + 端口扫描兼容路径。
+
+---
+
 ## [1.5.0] - 2026-11-21
 
 ### ✨ 桌面端插件套件大版本扩展 (`agy-app-Plugins/`)

@@ -133,6 +133,84 @@ function queryRpc(port, csrfToken, protocol, endpoint = 'GetUserStatus') {
   });
 }
 
+function isPidAlive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return Boolean(err && err.code === 'EPERM');
+  }
+}
+
+async function listRunningServerProcesses() {
+  if (process.platform === 'win32') {
+    const psCmd =
+      "powershell -NoProfile -Command \"Get-CimInstance Win32_Process | Where-Object { ($_.Name -like '*language_server*' -or $_.Name -like '*agy*' -or $_.CommandLine -like '*--hub*') -and $_.Name -notlike '*powershell*' -and $_.Name -notlike '*cmd*' } | Select-Object ProcessId, CommandLine, ExecutablePath | ConvertTo-Json -Compress\"";
+    const { stdout } = await execCommand(psCmd);
+    if (!stdout) return [];
+    try {
+      const parsed = JSON.parse(stdout);
+      const arr = Array.isArray(parsed) ? parsed : [parsed];
+      return arr
+        .filter((c) => c && c.ProcessId)
+        .map((c) => ({
+          pid: c.ProcessId,
+          cmd: c.CommandLine || '',
+          exe: c.ExecutablePath || '',
+        }));
+    } catch (e) {
+      return [];
+    }
+  }
+
+  const { stdout } = await execCommand('pgrep -fa "language_server|agy"');
+  if (!stdout) return [];
+  const out = [];
+  for (const line of stdout.split('\n')) {
+    const m = line.match(/^\s*(\d+)\s+(.*)$/);
+    if (m && !m[2].includes('pgrep')) {
+      out.push({ pid: parseInt(m[1], 10), cmd: m[2], exe: '' });
+    }
+  }
+  return out;
+}
+
+function readDaemonCandidates(procByPid) {
+  const daemonDir = path.join(os.homedir(), '.gemini', 'antigravity', 'daemon');
+  const results = [];
+  try {
+    if (!fs.existsSync(daemonDir)) return results;
+    const entries = fs.readdirSync(daemonDir);
+    for (const name of entries) {
+      if (!name.endsWith('.json')) continue;
+      const fullPath = path.join(daemonDir, name);
+      try {
+        const stat = fs.statSync(fullPath);
+        const info = JSON.parse(fs.readFileSync(fullPath, 'utf8'));
+        const pid = Number(info?.pid);
+        const csrfToken = info?.csrfToken;
+        const httpsPort = Number(info?.httpsPort) || 0;
+        const httpPort = Number(info?.httpPort) || 0;
+        if (!csrfToken || (!httpsPort && !httpPort) || !isPidAlive(pid)) {
+          continue;
+        }
+        const proc = procByPid.get(pid);
+        results.push({
+          pid,
+          cmd: proc?.cmd || '',
+          exe: proc?.exe || '',
+          csrfToken,
+          httpsPort,
+          httpPort,
+          mtimeMs: stat.mtimeMs || 0,
+        });
+      } catch (e) {}
+    }
+  } catch (e) {}
+  return results;
+}
+
 async function listServerCandidates(options = {}) {
   const hostAppRoot = (options.appRoot || '').replace(/\\/g, '/').toLowerCase();
   const execDir = (process.execPath ? path.dirname(process.execPath) : '')
@@ -171,37 +249,29 @@ async function listServerCandidates(options = {}) {
     return score;
   }
 
-  if (process.platform === 'win32') {
-    const psCmd =
-      "powershell -NoProfile -Command \"Get-CimInstance Win32_Process | Where-Object { ($_.Name -like '*language_server*' -or $_.Name -like '*agy*' -or $_.CommandLine -like '*--hub*') -and $_.Name -notlike '*powershell*' -and $_.Name -notlike '*cmd*' -and $_.CommandLine -like '*--csrf_token*' } | Select-Object ProcessId, CommandLine, ExecutablePath | ConvertTo-Json -Compress\"";
-    const { stdout } = await execCommand(psCmd);
-    if (!stdout) return [];
-    try {
-      const parsed = JSON.parse(stdout);
-      const arr = Array.isArray(parsed) ? parsed : [parsed];
-      return arr
-        .filter((c) => c && c.ProcessId && c.CommandLine)
-        .map((c) => ({
-          pid: c.ProcessId,
-          cmd: c.CommandLine,
-          exe: c.ExecutablePath || '',
-        }))
-        .sort((a, b) => getScore(b) - getScore(a));
-    } catch (e) {
-      return [];
+  const runningProcs = await listRunningServerProcesses();
+  const procByPid = new Map();
+  for (const p of runningProcs) {
+    procByPid.set(p.pid, p);
+  }
+
+  // Antigravity >= 2.35 writes port + csrfToken to ~/.gemini/antigravity/daemon/*.json
+  // instead of passing --csrf_token on the command line.
+  const candidates = readDaemonCandidates(procByPid);
+  const seenPids = new Set(candidates.map((c) => c.pid));
+
+  // Legacy <= 2.34 fallback: --csrf_token passed directly in command line
+  for (const p of runningProcs) {
+    if (!seenPids.has(p.pid) && p.cmd.includes('--csrf_token')) {
+      candidates.push({ ...p, mtimeMs: 0 });
     }
   }
 
-  const { stdout } = await execCommand('pgrep -fa "language_server|agy"');
-  if (!stdout) return [];
-  const out = [];
-  for (const line of stdout.split('\n')) {
-    const m = line.match(/^\s*(\d+)\s+(.*)$/);
-    if (m && m[2].includes('--csrf_token') && !m[2].includes('pgrep')) {
-      out.push({ pid: parseInt(m[1], 10), cmd: m[2], exe: '' });
-    }
-  }
-  return out.sort((a, b) => getScore(b) - getScore(a));
+  return candidates.sort((a, b) => {
+    const scoreDiff = getScore(b) - getScore(a);
+    if (scoreDiff !== 0) return scoreDiff;
+    return (b.mtimeMs || 0) - (a.mtimeMs || 0);
+  });
 }
 
 async function listListeningPorts(pid) {
@@ -249,14 +319,44 @@ async function scanForLanguageServer(options = {}) {
   for (const cand of candidates) {
     const cmd = cand.cmd || '';
     const pid = cand.pid;
-    if (!pid || !cmd) continue;
+    if (!pid) continue;
 
+    // Fast path: daemon/*.json provides exact csrfToken & httpsPort/httpPort directly
+    if (cand.csrfToken && (cand.httpsPort || cand.httpPort)) {
+      const directEndpoints = [];
+      if (cand.httpsPort > 0) {
+        directEndpoints.push({ port: cand.httpsPort, protocol: 'https' });
+      }
+      if (cand.httpPort > 0) {
+        directEndpoints.push({ port: cand.httpPort, protocol: 'http' });
+      }
+      const directResults = await Promise.all(
+        directEndpoints.map(({ port, protocol }) =>
+          queryRpc(port, cand.csrfToken, protocol, 'GetUserStatus')
+            .then((status) => ({ port, protocol, status }))
+            .catch(() => ({ port, protocol, status: null }))
+        )
+      );
+      for (const res of directResults) {
+        if (res.status && res.status.userStatus) {
+          return {
+            port: res.port,
+            protocol: res.protocol,
+            csrfToken: cand.csrfToken,
+            pid,
+            rawStatus: res.status.userStatus,
+          };
+        }
+      }
+    }
+
+    if (!cmd) continue;
     const tokenMatch = cmd.match(/--csrf_token[=\s]+([A-Za-z0-9\-_.=+/]+)/);
     const extPortMatch = cmd.match(/--extension_server_port[=\s]+(\d+)/);
     const hubPortMatch = cmd.match(/--hub-port[=\s]+(\d+)/);
-    if (!tokenMatch) continue;
+    const csrfToken = cand.csrfToken || (tokenMatch ? tokenMatch[1] : '');
+    if (!csrfToken) continue;
 
-    const csrfToken = tokenMatch[1];
     const extPort = extPortMatch ? parseInt(extPortMatch[1], 10) : 0;
     const hubPort = hubPortMatch ? parseInt(hubPortMatch[1], 10) : 0;
 
