@@ -655,6 +655,59 @@ export function buildPickerWidgetScript(bindingName = '__agyModelPickerCall') {
         cursor: wait;
         pointer-events: none;
       }
+      .icon-btn:disabled {
+        opacity: 0.42;
+        cursor: not-allowed;
+        pointer-events: none;
+      }
+      .readonly-banner {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 5px 9px;
+        margin-bottom: 8px;
+        border-radius: 8px;
+        border: 1px solid rgba(245, 158, 11, 0.32);
+        background: rgba(245, 158, 11, 0.1);
+        color: #f59e0b;
+        font-size: 10.5px;
+        font-weight: 600;
+        transition: transform 0.15s ease, background 0.15s ease;
+      }
+      .readonly-banner.pulse {
+        transform: scale(1.015);
+        background: rgba(245, 158, 11, 0.2);
+      }
+      .ro-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: #f59e0b;
+        flex-shrink: 0;
+        animation: agyRoPulse 1.4s ease-in-out infinite;
+      }
+      @keyframes agyRoPulse {
+        0%, 100% { opacity: 0.45; transform: scale(0.85); }
+        50% { opacity: 1; transform: scale(1.15); }
+      }
+      .panel.readonly .el-card,
+      .panel.readonly .pt-cell.live,
+      .panel.readonly .comp-btn,
+      .panel.readonly .orch-chip {
+        cursor: not-allowed;
+      }
+      .panel.readonly .el-card:hover,
+      .panel.readonly .pt-cell.live:hover,
+      .panel.readonly .orch-chip:hover {
+        transform: none;
+      }
+      .panel.readonly .slider-box {
+        opacity: 0.58;
+      }
+      .panel.readonly .slider-track-wrap,
+      .panel.readonly .stop-btn {
+        cursor: not-allowed;
+      }
       .sec-label {
         display: flex;
         align-items: center;
@@ -1301,9 +1354,33 @@ export function buildPickerWidgetScript(bindingName = '__agyModelPickerCall') {
     }
   }
 
+  function isPickerReadOnly(btn, ctx) {
+    if (!btn) return false;
+    if (btn.disabled || btn.getAttribute('aria-disabled') === 'true' || btn.hasAttribute('data-disabled')) {
+      return true;
+    }
+    if (typeof ctx?.disabledReason === 'string' && ctx.disabledReason.trim()) {
+      return true;
+    }
+    return false;
+  }
+
+  function pulseReadOnlyBanner() {
+    const b = panel.querySelector('.readonly-banner');
+    if (!b) return;
+    b.classList.remove('pulse');
+    void b.offsetWidth;
+    b.classList.add('pulse');
+    setTimeout(() => b.classList.remove('pulse'), 240);
+  }
+
   function applySelectedOption(ctx, targetOpt) {
     if (!targetOpt || targetOpt.disabled) return;
     const liveCtx = findModelContext(activeBtn) || ctx;
+    if (isPickerReadOnly(activeBtn, liveCtx)) {
+      pulseReadOnlyBanner();
+      return;
+    }
     if (!liveCtx || typeof liveCtx.setSelectedModel !== 'function') return;
     optimisticState = { opt: targetOpt, plannerOpt: null, until: Date.now() + 450 };
     panel._settleUntil = 0;
@@ -1315,6 +1392,10 @@ export function buildPickerWidgetScript(bindingName = '__agyModelPickerCall') {
 
   function applyOrchestratorPick(ctx, orchEntry, targetPlannerOpt, keepSettle) {
     const liveCtx = findModelContext(activeBtn) || ctx;
+    if (isPickerReadOnly(activeBtn, liveCtx)) {
+      pulseReadOnlyBanner();
+      return;
+    }
     if (!liveCtx || typeof liveCtx.setSelectedModel !== 'function') return;
     const orchOpt = (isOrchestratorOpt(liveCtx.selectedModel) && !liveCtx.selectedModel.disabled)
       ? liveCtx.selectedModel
@@ -1466,6 +1547,8 @@ export function buildPickerWidgetScript(bindingName = '__agyModelPickerCall') {
     const activeDesc = hoveredNote || localizeDescription(activeEntry);
     const orchPlannersHtml = activeEntry?.isUnifiedOrchestrator ? renderOrchestratorPlanners(activeEntry) : '';
     const sliderHtml = renderSliderSection(activeEntry, activeTier, sliderSelectedVal);
+    const readOnly = isPickerReadOnly(activeBtn, ctx);
+    panel.classList.toggle('readonly', readOnly);
 
     panel.innerHTML = \`
       <div class="hdr">
@@ -1483,9 +1566,11 @@ export function buildPickerWidgetScript(bindingName = '__agyModelPickerCall') {
             \${viewMode === 'pt' ? '卡片' : '周期表'}
           </button>
           <button type="button" class="icon-btn" data-act="refresh" title="刷新配额与模型列表">刷新</button>
-          <button type="button" class="icon-btn" data-act="native" title="打开 Antigravity 原生菜单 (含 View Usage)">原生</button>
+          <button type="button" class="icon-btn" data-act="native" \${readOnly ? 'disabled title="Agent 运行中暂不可打开原生菜单"' : 'title="打开 Antigravity 原生菜单 (含 View Usage)"'}>原生</button>
         </div>
       </div>
+
+      \${readOnly ? \`<div class="readonly-banner"><span class="ro-dot"></span><span>Agent 运行中 · 仅查看配额（结束后自动解锁）</span></div>\` : ''}
 
       <div class="sec-label">
         <span>Gemini 4 元素</span>
@@ -1504,10 +1589,10 @@ export function buildPickerWidgetScript(bindingName = '__agyModelPickerCall') {
       \${activeDesc && viewMode !== 'pt' ? \`<div class="info-strip">\${esc(activeDesc)}</div>\` : ''}
       \${orchPlannersHtml}
       \${sliderHtml}
-      <div class="ftr-tip">双击模型直接关闭 · 右键或 Shift+点击按钮打开原生菜单</div>
+      <div class="ftr-tip">\${readOnly ? '运行中仅支持查看与刷新配额 · 完成后自动恢复切换' : '双击模型直接关闭 · 右键或 Shift+点击按钮打开原生菜单'}</div>
     \`;
 
-    wirePanelEvents(ctx, byBase, activeEntry, activeTier, effectiveSelected, sliderSelectedVal);
+    wirePanelEvents(ctx, byBase, activeEntry, activeTier, effectiveSelected, sliderSelectedVal, readOnly);
     positionPanel();
     requestAnimationFrame(() => positionPanel());
   }
@@ -1675,7 +1760,7 @@ export function buildPickerWidgetScript(bindingName = '__agyModelPickerCall') {
     \`;
   }
 
-  function wirePanelEvents(ctx, byBase, activeEntry, activeTier, effectiveSelected, sliderSelectedVal) {
+  function wirePanelEvents(ctx, byBase, activeEntry, activeTier, effectiveSelected, sliderSelectedVal, readOnly) {
     panel.querySelector('[data-act="toggle-view"]')?.addEventListener('click', () => {
       viewMode = viewMode === 'pt' ? 'cards' : 'pt';
       try { localStorage.setItem(VIEW_STORAGE_KEY, viewMode); } catch {}
@@ -1696,6 +1781,10 @@ export function buildPickerWidgetScript(bindingName = '__agyModelPickerCall') {
       }
     });
     panel.querySelector('[data-act="native"]')?.addEventListener('click', () => {
+      if (readOnly) {
+        pulseReadOnlyBanner();
+        return;
+      }
       if (activeBtn) openNativeMenu(activeBtn);
     });
 
@@ -1723,9 +1812,15 @@ export function buildPickerWidgetScript(bindingName = '__agyModelPickerCall') {
         if (bt) bt.textContent = formatBannerTitle(activeEntry);
         if (bd) bd.textContent = activeDesc || '点击高亮元素切换模型';
       });
-      node.addEventListener('click', () => selectBaseEntry(ctx, entry, activeTier));
+      node.addEventListener('click', () => {
+        if (readOnly) {
+          pulseReadOnlyBanner();
+          return;
+        }
+        selectBaseEntry(ctx, entry, activeTier);
+      });
       node.addEventListener('dblclick', () => {
-        if (!entry.allDisabled) closePicker();
+        if (!readOnly && !entry.allDisabled) closePicker();
       });
     }
 
@@ -1734,14 +1829,28 @@ export function buildPickerWidgetScript(bindingName = '__agyModelPickerCall') {
         const pBase = chip.getAttribute('data-orch-planner');
         const pEntry = activeEntry.plannerByBase.get(pBase);
         if (!pEntry) continue;
-        chip.addEventListener('click', () => selectOrchestratorPlanner(ctx, activeEntry, pEntry));
+        chip.addEventListener('click', () => {
+          if (readOnly) {
+            pulseReadOnlyBanner();
+            return;
+          }
+          selectOrchestratorPlanner(ctx, activeEntry, pEntry);
+        });
         chip.addEventListener('dblclick', () => {
-          if (!pEntry.allDisabled) closePicker();
+          if (!readOnly && !pEntry.allDisabled) closePicker();
         });
       }
     }
 
-    if (activeEntry && activeEntry.tiers.length > 1) {
+    if (readOnly) {
+      for (const btn of panel.querySelectorAll('[data-tier-idx], [data-slider-track]')) {
+        btn.addEventListener('click', (ev) => {
+          ev.preventDefault();
+          pulseReadOnlyBanner();
+        });
+      }
+      panel._isDraggingSlider = () => false;
+    } else if (activeEntry && activeEntry.tiers.length > 1) {
       const tiers = activeEntry.tiers;
       let currentVal = sliderSelectedVal ?? effectiveSelected?.value;
       let isDraggingSlider = false;
@@ -1862,13 +1971,27 @@ export function buildPickerWidgetScript(bindingName = '__agyModelPickerCall') {
     panel._settleUntil = 0;
     applyTheme();
     overlayHost.style.display = 'block';
+    if (isPickerReadOnly(btn, ctx)) {
+      // Dismiss native "Model cannot be changed..." tooltip peeking behind our panel.
+      try {
+        btn.dispatchEvent(new MouseEvent('pointerleave', { bubbles: true }));
+        btn.dispatchEvent(new MouseEvent('mouseleave', { bubbles: true }));
+        btn.blur?.();
+      } catch {}
+    }
     startAutoRefresh(ctx);
     btnObserver = new MutationObserver(() => {
       if (!panel._isDraggingSlider?.() && overlayHost.style.display === 'block') {
         render();
       }
     });
-    btnObserver.observe(btn, { childList: true, subtree: true, characterData: true });
+    btnObserver.observe(btn, {
+      attributes: true,
+      attributeFilter: ['aria-disabled', 'disabled', 'data-disabled'],
+      childList: true,
+      subtree: true,
+      characterData: true,
+    });
     render();
     triggerQuotaRefresh(ctx);
   }
@@ -1906,10 +2029,12 @@ export function buildPickerWidgetScript(bindingName = '__agyModelPickerCall') {
 
   const onContextMenuCapture = (ev) => {
     const btn = matchTrigger(ev.target);
-    if (btn && findModelContext(btn)) {
+    const ctx = btn ? findModelContext(btn) : null;
+    if (btn && ctx) {
       ev.preventDefault();
       ev.stopPropagation();
-      openNativeMenu(btn);
+      if (isPickerReadOnly(btn, ctx)) togglePicker(btn);
+      else openNativeMenu(btn);
     }
   };
 
