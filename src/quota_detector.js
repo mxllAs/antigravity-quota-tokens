@@ -80,7 +80,7 @@ let lastQueryTime = 0;
 
 function execCommand(cmd) {
   return new Promise((resolve) => {
-    exec(cmd, { timeout: 4000 }, (err, stdout, stderr) => {
+    exec(cmd, { timeout: 4000, maxBuffer: 4 * 1024 * 1024 }, (err, stdout, stderr) => {
       resolve({ err, stdout: stdout ? stdout.trim() : '', stderr });
     });
   });
@@ -164,13 +164,19 @@ async function listRunningServerProcesses() {
     }
   }
 
-  const { stdout } = await execCommand('pgrep -fa "language_server|agy"');
+  // macOS BSD pgrep -fa omits command arguments; ps -axo pid=,command= works across macOS and Linux.
+  const { stdout } = await execCommand('ps -axo pid=,command=');
   if (!stdout) return [];
   const out = [];
   for (const line of stdout.split('\n')) {
     const m = line.match(/^\s*(\d+)\s+(.*)$/);
-    if (m && !m[2].includes('pgrep')) {
-      out.push({ pid: parseInt(m[1], 10), cmd: m[2], exe: '' });
+    if (!m) continue;
+    const pid = parseInt(m[1], 10);
+    const cmd = m[2].trim();
+    if (!cmd || pid === process.pid) continue;
+    if (/^\s*ps\b/.test(cmd)) continue;
+    if (/(?:language_server|(?:^|[\/\s])agy(?:\b|$)|--hub\b|--csrf_token\b)/i.test(cmd)) {
+      out.push({ pid, cmd, exe: '' });
     }
   }
   return out;

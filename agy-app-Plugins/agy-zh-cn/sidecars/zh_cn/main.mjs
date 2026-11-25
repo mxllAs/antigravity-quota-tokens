@@ -216,7 +216,8 @@ function isLoopbackHttpUrl(rawUrl) {
     return (
       parsed.hostname === '127.0.0.1' ||
       parsed.hostname === 'localhost' ||
-      parsed.hostname === '::1'
+      parsed.hostname === '::1' ||
+      parsed.hostname === '[::1]'
     );
   } catch {
     return false;

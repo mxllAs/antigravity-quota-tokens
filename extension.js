@@ -1,6 +1,7 @@
 const vscode = require('vscode');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 const { execFile } = require('child_process');
 const { getLiveQuota } = require('./src/quota_detector');
 const { getWebviewHtml } = require('./src/webview_ui');
@@ -120,14 +121,20 @@ async function resolvePythonPath() {
   const folders = vscode.workspace.workspaceFolders;
   if (folders && folders.length > 0) {
     for (const f of folders) {
-      const venvPy = process.platform === 'win32'
-        ? path.join(f.uri.fsPath, '.venv', 'Scripts', 'python.exe')
-        : path.join(f.uri.fsPath, '.venv', 'bin', 'python');
-      if (fs.existsSync(venvPy)) return venvPy;
+      const venvCandidates =
+        process.platform === 'win32'
+          ? [path.join(f.uri.fsPath, '.venv', 'Scripts', 'python.exe')]
+          : [
+              path.join(f.uri.fsPath, '.venv', 'bin', 'python3'),
+              path.join(f.uri.fsPath, '.venv', 'bin', 'python'),
+            ];
+      for (const venvPy of venvCandidates) {
+        if (fs.existsSync(venvPy)) return venvPy;
+      }
     }
   }
 
-  // Common Windows paths
+  // Common platform-specific Python paths (especially when GUI apps lack shell PATH)
   if (process.platform === 'win32') {
     const userProfile = process.env.USERPROFILE || 'C:\\Users\\Default';
     const winCandidates = [
@@ -144,6 +151,24 @@ async function resolvePythonPath() {
     return 'python';
   }
 
+  if (process.platform === 'darwin') {
+    const macCandidates = [
+      '/opt/homebrew/bin/python3',
+      '/usr/local/bin/python3',
+      '/Library/Frameworks/Python.framework/Versions/Current/bin/python3',
+      path.join(os.homedir(), '.pyenv', 'shims', 'python3'),
+      '/usr/bin/python3',
+    ];
+    for (const p of macCandidates) {
+      if (fs.existsSync(p)) return p;
+    }
+    return 'python3';
+  }
+
+  const linuxCandidates = ['/usr/bin/python3', '/usr/local/bin/python3'];
+  for (const p of linuxCandidates) {
+    if (fs.existsSync(p)) return p;
+  }
   return 'python3';
 }
 
@@ -182,15 +207,31 @@ function runTokenCollector(pythonBin, workspacePath) {
 async function fetchTokens() {
   const pythonBin = await resolvePythonPath();
   const currentWorkspace = vscode.workspace.workspaceFolders?.[0]?.uri?.fsPath || '';
-  let data = await runTokenCollector(pythonBin, currentWorkspace);
 
-  if (!data && pythonBin !== 'python') {
-    data = await runTokenCollector('python', currentWorkspace);
+  const candidates =
+    process.platform === 'win32'
+      ? [pythonBin, 'python', 'py', 'python3']
+      : process.platform === 'darwin'
+        ? [
+            pythonBin,
+            'python3',
+            '/opt/homebrew/bin/python3',
+            '/usr/local/bin/python3',
+            '/Library/Frameworks/Python.framework/Versions/Current/bin/python3',
+            '/usr/bin/python3',
+            'python',
+          ]
+        : [pythonBin, 'python3', '/usr/bin/python3', 'python'];
+
+  const tried = new Set();
+  for (const candidate of candidates) {
+    if (!candidate || tried.has(candidate)) continue;
+    tried.add(candidate);
+    if (path.isAbsolute(candidate) && !fs.existsSync(candidate)) continue;
+    const data = await runTokenCollector(candidate, currentWorkspace);
+    if (data) return data;
   }
-  if (!data && pythonBin !== 'py') {
-    data = await runTokenCollector('py', currentWorkspace);
-  }
-  return data;
+  return null;
 }
 
 // ==================== Data Sync & Status Bar ====================

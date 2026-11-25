@@ -197,7 +197,7 @@
     }
   },
   "scripts": {
-    "test": "node -c extension.js && node -c src/cli_settings.js && node -c src/quota_detector.js && node -c src/token_archive.js && node -c src/sync_client.js && node -c src/session_cleaner.js && node -c src/webview_ui.js && node -c src/views/app.js && python -m py_compile src/token_collector.py",
+    "test": "node -c extension.js && node -c src/cli_settings.js && node -c src/quota_detector.js && node -c src/token_archive.js && node -c src/sync_client.js && node -c src/session_cleaner.js && node -c src/webview_ui.js && node -c src/views/app.js && node -e \"const cp=require('child_process');const bins=process.platform==='win32'?['python','py','python3']:['python3','python'];for(const b of bins){const r=cp.spawnSync(b,['-m','py_compile','src/token_collector.py'],{stdio:'inherit'});if(r.error==null&&r.status===0)process.exit(0);if(r.error==null&&r.status!==9009)process.exit(r.status||1);}console.error('No Python interpreter found');process.exit(1)\"",
     "package": "npx @vscode/vsce package --no-dependencies -o releases/"
   }
 }

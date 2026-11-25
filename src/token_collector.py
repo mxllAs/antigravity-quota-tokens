@@ -454,6 +454,10 @@ def collect_tokens(target_date=None, target_workspace=""):
                         m = re.search(r'file:///([^\x00-\x20\x7f-\xff]+)', text)
                         if m:
                             raw_path = urllib.parse.unquote(m.group(1))
+                            # Restore leading '/' on POSIX paths (e.g. file:///Users/... -> /Users/...)
+                            # while keeping Windows drive paths (e.g. file:///C:/... -> C:/...) intact.
+                            if not re.match(r'^[A-Za-z]:', raw_path) and not raw_path.startswith('/'):
+                                raw_path = '/' + raw_path
                             workspace_path = os.path.normpath(raw_path)
                             folder = os.path.basename(workspace_path.rstrip('/\\'))
                             if folder:
@@ -463,8 +467,14 @@ def collect_tokens(target_date=None, target_workspace=""):
 
                 is_current_workspace = False
                 if target_workspace_norm and workspace_path:
-                    if target_workspace_norm in workspace_path.lower() or workspace_path.lower() in target_workspace_norm:
+                    ws_norm_lower = workspace_path.lower()
+                    if ws_norm_lower == target_workspace_norm:
                         is_current_workspace = True
+                    else:
+                        t_prefix = target_workspace_norm if target_workspace_norm.endswith(os.sep) else target_workspace_norm + os.sep
+                        w_prefix = ws_norm_lower if ws_norm_lower.endswith(os.sep) else ws_norm_lower + os.sep
+                        if ws_norm_lower.startswith(t_prefix) or target_workspace_norm.startswith(w_prefix):
+                            is_current_workspace = True
 
                 # 2. Step timestamps
                 step_times = {}

@@ -17,7 +17,9 @@
 
 ---
 
-## 🚀 快速安装 / 更新（公司 & 家里通用）
+## 🚀 快速安装 / 更新（Windows & macOS 通用）
+
+### Windows (PowerShell)
 
 在 PowerShell 中进入本目录运行统一安装脚本（自动扫描并部署本目录下所有含 `plugin.json` 的插件到 `%USERPROFILE%\.gemini\config\plugins\`）：
 
@@ -31,13 +33,38 @@ cd agy-app-Plugins
 .\install.ps1 -Plugin agy-chat-metrics
 ```
 
-### 卸载
+#### Windows 卸载
 ```powershell
 # 卸载全部本仓库管理的桌面端插件
 .\uninstall.ps1
 
 # 卸载指定插件（加上 -RestoreShortcuts 可同时还原快捷方式参数）
 .\uninstall.ps1 -Plugin agy-chat-metrics
+```
+
+### macOS / Linux (Bash / Zsh)
+
+在终端进入本目录运行 `install.sh`（自动部署到 `~/.gemini/config/plugins/`，并将已安装副本中的 `sidecar.json` `node` 命令解析为绝对路径，避免 GUI 启动缺少 Homebrew `PATH`；同时在 macOS 生成 `~/Applications/Antigravity (Debug).app` 启动器）：
+
+```bash
+cd agy-app-Plugins
+
+# 安装 / 更新全部桌面端插件并生成调试启动器
+./install.sh
+
+# 或只安装 / 更新指定插件：
+./install.sh --plugin agy-chat-metrics
+```
+
+> **macOS 启动说明**：完全退出 Antigravity 桌面端（`Cmd + Q`）后，双击 `~/Applications/Antigravity (Debug).app`（或在终端执行 `~/.gemini/config/plugins/launch-antigravity-debug.sh`）即可带本地回环调试端口启动。
+
+#### macOS / Linux 卸载
+```bash
+# 卸载全部本仓库管理的桌面端插件
+./uninstall.sh
+
+# 卸载指定插件（加上 --remove-launcher 可同时清理调试启动器）
+./uninstall.sh --plugin agy-chat-metrics
 ```
 
 ---

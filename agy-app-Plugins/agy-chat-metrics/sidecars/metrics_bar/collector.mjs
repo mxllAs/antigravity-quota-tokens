@@ -91,8 +91,10 @@ function callLsRpc(method, bodyObj = {}, timeoutMs = 2500) {
   const csrf = process.env.ANTIGRAVITY_CSRF_TOKEN;
   if (!lsAddr || !csrf) return Promise.resolve(null);
 
-  const [host, portStr] = lsAddr.split(':');
-  const port = parseInt(portStr, 10);
+  const sep = lsAddr.lastIndexOf(':');
+  if (sep <= 0) return Promise.resolve(null);
+  const host = lsAddr.slice(0, sep).replace(/^\[|\]$/g, '');
+  const port = parseInt(lsAddr.slice(sep + 1), 10);
   if (!host || !port) return Promise.resolve(null);
 
   const tryProto = (proto) =>

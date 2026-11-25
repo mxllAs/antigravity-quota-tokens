@@ -2,6 +2,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import http from 'node:http';
 import https from 'node:https';
 import net from 'node:net';
+import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildPickerWidgetScript } from './widget.js';
@@ -22,13 +23,13 @@ function getProfileDir() {
   }
   if (process.platform === 'darwin') {
     return join(
-      process.env.HOME || '',
+      process.env.HOME || homedir(),
       'Library',
       'Application Support',
       'Antigravity'
     );
   }
-  return join(process.env.HOME || '', '.config', 'Antigravity');
+  return join(process.env.HOME || homedir(), '.config', 'Antigravity');
 }
 
 function httpGetJson(port, path) {
